@@ -1,11 +1,85 @@
 ;;;; Copyright (c) Frank James 2015 <frank.a.james@gmail.com>
 ;;;; This code is licensed under the MIT license.
 
+(in-package #:cerberus)
 
-(defpackage #:cerberus.asn1 
-  (:use #:cl #:frpc.xdr))
+;; --------------------------------------
+;; The serialization codes here are copied verbatim from the XDR serializer 
+;; used in FRPC. We're not doing XDR (mores the pity), but the technology is the same
+;;
 
-(in-package #:cerberus.asn1)
+(defvar *xtypes* (make-hash-table))
+
+(defun %defxtype (name reader writer)
+  (setf (gethash name *xtypes*)
+	(list reader writer)))
+
+(defun xtype-reader (name) 
+  (declare (type symbol name))
+  (let ((fn (first (gethash name *xtypes*))))
+    (if fn
+	fn
+	(error "No type ~S" name))))
+
+(defun xtype-writer (name) 
+  (declare (type symbol name))
+  (let ((fn (second (gethash name *xtypes*))))
+    (if fn
+	fn
+	(error "No type ~S" name))))
+
+(defmacro defxtype (name (&rest options) ((reader-stream) &body reader-body) ((writer-stream obj) &body writer-body))
+  (let ((reader (let ((n (cadr (assoc :reader options))))
+		  (if n 
+		      n
+		      (alexandria:symbolicate '%read- name))))
+	(writer (let ((n (cadr (assoc :writer options))))
+		  (if n
+		      n 
+		      (alexandria:symbolicate '%write- name)))))
+    `(progn
+       (defun ,reader (,reader-stream)
+	 ,@reader-body)
+       (defun ,writer (,writer-stream ,obj)
+	 ,@writer-body)
+       (%defxtype ',name (function ,reader) (function ,writer)))))
+
+(defmacro defxtype* (name (&rest options) type-name)
+  (declare (ignore options))
+  `(%defxtype ',name (xtype-reader ',type-name) (xtype-writer ',type-name)))
+
+(defun read-xtype (type stream)
+  (cond
+    ((functionp type)
+     (funcall type stream))
+    (t 
+     (funcall (xtype-reader type) stream))))
+
+(defun write-xtype (type stream obj)
+  (cond
+    ((functionp type)
+     (funcall type stream obj))
+    (t 
+     (funcall (xtype-writer type) stream obj))))
+
+(defun pad-index (index)
+  (let ((m (mod index 4)))
+    (if (zerop m)
+	index
+	(+ index (- 4 m)))))
+
+
+(defun pack (writer obj)
+  "Write the object into an octet-buffer."
+  (flexi-streams:with-output-to-sequence (v :element-type 'nibbles:octet)
+    (funcall writer v obj)))
+
+(defun unpack (reader buffer)
+  "Read the object from an octet-buffer."
+  (flexi-streams:with-input-from-sequence (v buffer)
+    (funcall reader v)))
+
+;; ------------------------------------------------------
 
 (defun encode-identifier (stream tag &key (class :universal) (primitive t))
   (declare (type (integer 0 30) tag))
@@ -322,9 +396,9 @@
 			   slots)))
 	 value))
      ;; define the type
-     (frpc.xdr::%defxtype ',name
-		      #',(alexandria:symbolicate 'decode- name)
-		      #',(alexandria:symbolicate 'encode- name))
+     (%defxtype ',name
+		#',(alexandria:symbolicate 'decode- name)
+		#',(alexandria:symbolicate 'encode- name))
 
      ',name))
 
