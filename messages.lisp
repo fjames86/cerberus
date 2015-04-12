@@ -46,10 +46,9 @@
 					     :etype (mapcar #'etype-integer encryption-types)
 					     :addresses (mapcar (lambda (ip)
 								  (make-host-address :type 2 ;; IPv4
-										     :name (etypecase ip
-											     (string (babel:string-to-octets ip))
-											     (vector ip))))
+										     :name (babel:string-to-octets ip)))
 								ip-list)
 					     :enc-authorization-data authorization-data
 					     :additional-tickets tickets)))
+
 
