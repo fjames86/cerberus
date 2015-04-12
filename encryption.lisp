@@ -54,6 +54,13 @@
 		(logand byte #xff))
 	  (setf byte (ash byte -8)))))))
 
+(defun k-truncate (octets k)
+  "k is the number of bits"
+  (let ((result (subseq octets 0 (1+ (truncate k 8)))))
+    ;; FIXME: shouild also clear the high bits of the final octet if
+    ;; k is not a multiple of 8. when that code is added, remove the assert
+    (assert (zerop (mod k 8)))
+    result))
 
 (defun reverse-bits (octet)
   (the (unsigned-byte 7)
@@ -74,20 +81,28 @@
     (let ((length (mod (length octets) 8)))
       (unless (zerop (mod length 8))
 	(setf octets (append octets (make-list (- 8 length) :initial-element 0)))))
+    (format t "~X~%" octets)
     ;; remove most significant bit and reverse the bits
     (do ((%octets octets (nthcdr 8 %octets))
 	 (odd t (not odd)))
 	((null %octets))
       (let ((8octets (subseq %octets 0 8)))
+	;; remove the most sig bit from each byte
+	(dotimes (i 8)
+	  (setf (nth i 8octets) 
+		(the (unsigned-byte 7)
+		     (logand (nth i 8octets) (lognot #x80)))))
+	;; unless odd, reverse the bits
+	(unless odd
+	  (setf 8octets (reverse 8octets))
+	  (dotimes (i 8)
+	    (setf (nth i 8octets) (reverse-bits (nth i 8octets)))))
+	;; xor into the key
 	(dotimes (i 8)
 	  (setf (aref key i)
 		(the (unsigned-byte 7)
 		     (logxor (aref key i)
-			     (let ((7bit (logand (nth (- 7 i) 8octets) 
-						 (lognot #x80))))
-			       (if odd 
-				   (reverse-bits 7bit)
-				   7bit))))))))
+			     (nth i 8octets)))))))
     (format t "~X~%" key)
     ;; left shift and add a parity bit
     (dotimes (i 8)
@@ -99,7 +114,14 @@
 			     (if parityp 1 0)))))))
     ;; FIXME: if the key is "weak" or "semi-weak" then XOR with #xF0.
     ;; the definitions of weak/semi-weak can be found in the DES specification
+    (format t "~X~%" key)
     key))
     
+;; salt:        "ATHENA.MIT.EDUraeburn"
+;;                            415448454e412e4d49542e4544557261656275726e
+;; password:    "password"    70617373776f7264
+;; fan-fold result:           c01e38688ac86c2e
+;; intermediate key:          c11f38688ac86d2f
+;; DES key:                   cbc22fae235298e3
     
 
