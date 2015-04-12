@@ -32,11 +32,11 @@
   (let ((reader (let ((n (cadr (assoc :reader options))))
 		  (if n 
 		      n
-		      (alexandria:symbolicate '%read- name))))
+		      (alexandria:symbolicate 'encode- name))))
 	(writer (let ((n (cadr (assoc :writer options))))
 		  (if n
 		      n 
-		      (alexandria:symbolicate '%write- name)))))
+		      (alexandria:symbolicate 'decode- name)))))
     `(progn
        (defun ,reader (,reader-stream)
 	 ,@reader-body)
@@ -80,6 +80,8 @@
     (funcall reader v)))
 
 ;; ------------------------------------------------------
+
+(defvar *kerberos-oid* "1.2.840.48018.1.2.2")
 
 (defun encode-identifier (stream tag &key (class :universal) (primitive t))
   (declare (type (integer 0 30) tag))
