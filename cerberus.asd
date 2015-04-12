@@ -10,6 +10,6 @@
   ((:file "package")
    (:file "asn1" :depends-on ("package"))
    (:file "messages" :depends-on ("asn1")))
-  :depends-on (:alexandria :nibbles :flexi-streams :babel))
+  :depends-on (:alexandria :nibbles :flexi-streams :babel :ironclad))
 
 

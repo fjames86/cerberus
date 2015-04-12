@@ -14,85 +14,46 @@
 
 ;; --------------
 
-;; need n-fold function
-(defun make-bit-vector (n)
-  (make-array n :element-type 'bit))
+;; This is copied/ported from the C codes found here 
+;; http://opensource.apple.com/source/Kerberos/Kerberos-62/KerberosFramework/Kerberos5/Sources/lib/crypto/nfold.c
+(defun n-fold (octets n)
+  "The horrific n-fold function as specifed in the rfc."
+  (let ((inbytes (ash (* (length octets) 8) -3))
+	(outbytes (ash n -3)))
+    (let ((lcm (lcm inbytes outbytes))
+	  (out (nibbles:make-octet-vector outbytes)))
+      (do ((i (1- lcm) (1- i))
+	   (byte 0))
+	  ((< i 0)
+	   (progn
+	     (unless (zerop byte)
+	       (do ((i (1- outbytes) (1- i)))
+		   ((< i 0))
+		 (incf byte (aref out i))
+		 (setf (aref out i) (logand byte #xff))
+		 (setf byte (ash byte -8))))
+	     out))
+	(let ((msbit (mod (+ (1- (ash inbytes 3))
+			     (* (+ (ash inbytes 3) 13) 
+				(truncate i inbytes))
+			     (ash (- inbytes (mod i inbytes)) 3))
+			  (ash inbytes 3))))
+	  (incf byte
+		(logand 
+		 (ash 
+		  (logior 
+		   (ash (aref octets (mod (- (1- inbytes) (ash msbit -3))
+					  inbytes))
+			8)
+		   (aref octets (mod (- inbytes (ash msbit -3))
+				     inbytes)))
+		  (- (1+ (logand msbit 7))))
+		 #xff))
+	  (incf byte (aref out (mod i outbytes)))
+	  (setf (aref out (mod i outbytes))
+		(logand byte #xff))
+	  (setf byte (ash byte -8)))))))
 
-(defun bv-int (bit-vector)
-  "Create a positive integer from a bit-vector."
-  (reduce #'(lambda (first-bit second-bit)
-              (+ (* first-bit 2) second-bit))
-          bit-vector))
-
-(defun int-bv (integer)
-  "Create a bit-vector from a positive integer."
-  (labels ((integer->bit-list (int &optional accum)
-             (cond ((> int 0)
-                    (multiple-value-bind (i r) (truncate int 2)
-                      (integer->bit-list i (push r accum))))
-                   ((null accum) (push 0 accum))
-		   (t accum))))
-    (coerce (integer->bit-list integer) 'bit-vector)))
-
-(defun rotate-bit-vector (bv n)
-  (let ((length (length bv)))
-    (let ((v (make-bit-vector length)))
-      (dotimes (i length)
-	(setf (bit v i)
-	      (bit bv (mod (+ length i (- n)) length))))
-      v)))
-(defun add-bit-vector (bv1 bv2)
-  "1's complement addition of bit vector"
-  (let* ((len1 (length bv1))
-	 (len2 (length bv2))
-	 (length (max len1 len2)))
-    (do ((carry 0)
-	 (i 0 (1+ i))
-	 (result (make-bit-vector length)))
-	((= i length)
-	 (if (= carry 1)
-	     (add-bit-vector result #*1)
-	     result))
-      (let ((sum (+ (if (< i len1)
-			(bit bv1 i)
-			0)
-		    (if (< i len2)
-			(bit bv2 i)
-			0)
-		    carry)))
-	(ecase sum
-	  ((0 1) 
-	   (setf (bit result i) sum
-		 carry 0))
-	  (2
-	   (setf carry 1))
-	  (3 
-	   (setf (bit result i) 1
-		 carry 1)))))))
-(defun n-fold (bv n)
-  (let ((lcm (lcm (length bv) n))
-	(len (length bv)))
-    (let ((result (make-bit-vector n))
-	  (temp-sum (make-bit-vector lcm)))
-      (do ((i 0 (1+ i)))
-	  ((= i (truncate lcm len)) result)
-	(let ((temp (rotate-bit-vector bv (* 13 i))))
-	  (dotimes (j (length temp))
-	    (setf (bit temp-sum (+ j (* i (length temp))))
-		  (bit temp j)))))
-      (let ((sum (make-bit-vector n))
-	    (nfold (make-bit-vector n)))
-	(dotimes (m (truncate lcm n))
-	  (dotimes (o n)
-	    (setf (bit sum o) (bit temp-sum (+ o (* m n)))))
-	  (setf nfold (add-bit-vector nfold sum)))
-	nfold))))
-
-;; http://grepcode.com/file/repository.springsource.com/org.apache.directory/com.springsource.org.apache.directory.server.kerberos.shared/1.5.5/org/apache/directory/server/kerberos/shared/crypto/encryption/NFold.java#NFold.rotateRight%28byte%5B%5D%2Cint%2Cint%29
-
-;; need to be able to do this	  
-;; 64-fold(303132333435) = be072631276b1955
-;; (format nil "~X" (bv-int (n-fold (int-bv #x303132333435) 64)))
 
 (defun reverse-bits (octet)
   (the (unsigned-byte 7)
