@@ -55,6 +55,7 @@
 #xB40BBE37 #xC30C8EA1 #x5A05DF1B #x2D02EF8D)
   :test 'equalp)
 
+;; this works
 (defun crc32 (octets)
   "We have to use our own CRC32 because the kerberos spec requires a modification. Otherwise I'd use the ironclad one."
   (do ((c 0)
@@ -68,12 +69,16 @@
       (setf c (ash c -8))
       (setf c (logxor c (aref +crc32-table+ idx))))))
 
+;; unknown whether this works
 (defun des-cbc (key octets)
-  (let ((result (nibbles:make-octet-vector 8)))
+  (let ((result (nibbles:make-octet-vector (length octets))))
     (ironclad:encrypt (ironclad:make-cipher :des 
 					    :mode :cbc
 					    :key key
-					    :initialization-vector (nibbles:make-octet-vector 8))
+					    :initialization-vector (let ((v (nibbles:make-octet-vector 8)))
+								     (dotimes (i 8)
+								       (setf (aref v i) (aref key i)))
+								     v))
 		      octets
 		      result)
     result))
@@ -82,6 +87,7 @@
 
 ;; This is copied/ported from the C codes found here 
 ;; http://opensource.apple.com/source/Kerberos/Kerberos-62/KerberosFramework/Kerberos5/Sources/lib/crypto/nfold.c
+;; this works
 (defun n-fold (octets n)
   "The horrific n-fold function as specifed in the rfc."
   (let ((inbytes (ash (* (length octets) 8) -3))
@@ -138,6 +144,23 @@
 	       (ash (logand octet #x20) -4)
 	       (ash (logand octet #x40) -6))))
 
+(defun fix-parity (key)
+  (dotimes (i 8)
+    (let ((octet (aref key i)))
+      (let ((parityp (zerop (mod (logcount octet) 2)))
+	    (evenp (zerop (mod (aref key i) 2))))
+	(cond 
+	  ((and parityp evenp)
+	   ;; turn the parity bit on
+	   (setf (aref key i)
+		 (logior (aref key i) 1)))
+	  ((and parityp (not evenp))
+	   ;; turn the parity bit on
+	   (setf (aref key i) 
+		 (logand (aref key i) (lognot 1))))))))
+  key)
+
+;; this seems to work
 (defun make-des-key (password salt)
   (let ((octets (concatenate 'list
 			     (babel:string-to-octets password)
@@ -147,7 +170,7 @@
     (let ((length (mod (length octets) 8)))
       (unless (zerop (mod length 8))
 	(setf octets (append octets (make-list (- 8 length) :initial-element 0)))))
-    (format t "~X~%" octets)
+    ;;(format t "~X~%" octets)
     ;; remove most significant bit and reverse the bits
     (do ((%octets octets (nthcdr 8 %octets))
 	 (odd t (not odd)))
@@ -169,7 +192,7 @@
 		(the (unsigned-byte 7)
 		     (logxor (aref key i)
 			     (nth i 8octets)))))))
-    (format t "~X~%" key)
+    ;;(format t "~X~%" key)
     ;; left shift and add a parity bit
     (dotimes (i 8)
       (let ((octet (aref key i)))
@@ -180,14 +203,16 @@
 			     (if parityp 1 0)))))))
     ;; FIXME: if the key is "weak" or "semi-weak" then XOR with #xF0.
     ;; the definitions of weak/semi-weak can be found in the DES specification
-    (format t "~X~%" key)
+;;    (format t "~X~%" key)
 
-    (let ((ebc (des-cbc key (make-array (length octets) 
-					:element-type '(unsigned-byte 8)
-					:initial-contents octets))))
-      (format t "~X~%" ebc))
-
-    key))
+    (let ((enc (des-cbc key 
+			(make-array (length octets) 
+				    :element-type '(unsigned-byte 8)
+				    :initial-contents octets))))
+  ;;    (format t "~X~%" (subseq enc (- (length enc) 8)))
+      (setf key (subseq enc (- (length enc) 8)))
+      (fix-parity key)
+      key)))
     
 ;; salt:        "ATHENA.MIT.EDUraeburn"
 ;;                            415448454e412e4d49542e4544557261656275726e
