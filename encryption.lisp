@@ -9,8 +9,20 @@
   (ironclad:digest-sequence (ironclad:make-digest :md5) sequence))
 
 (defun crc32 (sequence)
-  (ironclad:digest-sequence (ironclad:make-digest :crc32) sequence))
+  (let ((octets (ironclad:digest-sequence (ironclad:make-digest :crc32) sequence)))
+    (setf (nibbles:ub32ref/be octets 0)
+	  (logxor #xffffffff (nibbles:ub32ref/be octets 0)))
+    octets))
 
+(defun des-cbc (key octets)
+  (let ((result (nibbles:make-octet-vector 8)))
+    (ironclad:encrypt (ironclad:make-cipher :des 
+					    :mode :cbc
+					    :key key
+					    :initialization-vector (nibbles:make-octet-vector 8))
+		      octets
+		      result)
+    result))
 
 ;; --------------
 
@@ -115,6 +127,12 @@
     ;; FIXME: if the key is "weak" or "semi-weak" then XOR with #xF0.
     ;; the definitions of weak/semi-weak can be found in the DES specification
     (format t "~X~%" key)
+
+    (let ((ebc (des-cbc key (make-array (length octets) 
+					:element-type '(unsigned-byte 8)
+					:initial-contents octets))))
+      (format t "~X~%" ebc))
+
     key))
     
 ;; salt:        "ATHENA.MIT.EDUraeburn"
@@ -123,5 +141,5 @@
 ;; fan-fold result:           c01e38688ac86c2e
 ;; intermediate key:          c11f38688ac86d2f
 ;; DES key:                   cbc22fae235298e3
-    
-
+;;  
+;;(make-des-key "password" "ATHENA.MIT.EDUraeburn")

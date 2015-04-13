@@ -40,7 +40,7 @@
 					     :realm realm
 					     :sname server-principal
 					     :from from-time
-					     :till (or till-time (error "Till-time is mandatory"))
+					     :till (or till-time (encode-universal-time 0 0 0 1 1 1970))
 					     :rtime renew-time
 					     :nonce (or nonce (random #xffffffff))
 					     :etype (mapcar #'etype-integer encryption-types)
@@ -51,4 +51,8 @@
 					     :enc-authorization-data authorization-data
 					     :additional-tickets tickets)))
 
-
+(defun make-krb-ticket (principal realm octets)
+  (make-ticket :realm realm
+	       :sname principal
+	       :enc-part (make-encrypted-data :type 0
+					      :cipher octets)))

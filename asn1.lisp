@@ -347,12 +347,6 @@
 		 slots))
      ;; the encoder 
      (defun ,(alexandria:symbolicate 'encode- name) (stream value)
-       (encode-identifier stream 
-			  ,(let ((tag (assoc :tag options)))
-				    (if tag (cadr tag) 16))
-			  :class ,(let ((class (assoc :class options)))
-				    (if class (cadr class) :application))
-			  :primitive nil)
        (let ((bytes (flexi-streams:with-output-to-sequence (s)
 		      ,@(mapcar (lambda (slot)
 				  (destructuring-bind (slot-name slot-type &key tag optional &allow-other-keys) slot 
@@ -367,10 +361,19 @@
 					   ;; write the contents
 					   (write-sequence contents s))))))
 				slots))))
+	 ,@(when (assoc :tag options)
+	     `((encode-identifier stream ,(cadr (assoc :tag options)) 
+				  :class ,(or (cadr (assoc :class options)) :context)
+				  :primitive nil)
+	       (encode-length stream (1+ (length bytes)))))
+	 (encode-identifier stream 16 :primitive nil)
 	 (encode-length stream (length bytes))
 	 (write-sequence bytes stream)))
      ;; decoder
      (defun ,(alexandria:symbolicate 'decode- name) (stream)
+       ,@(when (assoc :tag options)
+	   `((decode-identifier stream)
+	     (decode-length stream)))
        (decode-identifier stream)
        (let ((length (decode-length stream))
 	     (value (,(alexandria:symbolicate 'make- name))))
