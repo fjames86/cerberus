@@ -9,7 +9,8 @@
   :components
   ((:file "package")
    (:file "asn1" :depends-on ("package"))
-   (:file "messages" :depends-on ("asn1")))
+   (:file "messages" :depends-on ("asn1"))
+   (:file "encryption" :depends-on ("messages")))
   :depends-on (:alexandria :nibbles :flexi-streams :babel :ironclad))
 
 

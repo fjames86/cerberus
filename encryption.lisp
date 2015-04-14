@@ -10,7 +10,10 @@
 
 (declaim (type (simple-array (unsigned-byte 32) (256)) +crc32-table+))
 (alexandria:define-constant +crc32-table+
-    #(#x00000000 #x77073096 #xEE0E612C #x990951BA #x076DC419 #x706AF48F
+    (make-array 256 
+		:element-type '(unsigned-byte 32)
+		:initial-contents 
+'(#x00000000 #x77073096 #xEE0E612C #x990951BA #x076DC419 #x706AF48F
 #xE963A535 #x9E6495A3 #x0EDB8832 #x79DCB8A4 #xE0D5E91E #x97D2D988
 #x09B64C2B #x7EB17CBD #xE7B82D07 #x90BF1D91 #x1DB71064 #x6AB020F2
 #xF3B97148 #x84BE41DE #x1ADAD47D #x6DDDE4EB #xF4D4B551 #x83D385C7
@@ -52,7 +55,7 @@
 #x40DF0B66 #x37D83BF0 #xA9BCAE53 #xDEBB9EC5 #x47B2CF7F #x30B5FFE9
 #xBDBDF21C #xCABAC28A #x53B39330 #x24B4A3A6 #xBAD03605 #xCDD70693
 #x54DE5729 #x23D967BF #xB3667A2E #xC4614AB8 #x5D681B02 #x2A6F2B94
-#xB40BBE37 #xC30C8EA1 #x5A05DF1B #x2D02EF8D)
+#xB40BBE37 #xC30C8EA1 #x5A05DF1B #x2D02EF8D))
   :test 'equalp)
 
 ;; this works
@@ -160,17 +163,55 @@
 		 (logand (aref key i) (lognot 1))))))))
   key)
 
-;; this seems to work
-(defun make-des-key (password salt)
+;; the 4 weak and 12 semi-weak keys as specified in DESI81 specification
+;; I got this list from opensource.apple.com/source/Kerberos/Kerberos-62/KerberosFramework/Kerberos5/Sources/lib/crypto/des/weak_key.c
+(defparameter *des-weak-keys*
+  '(
+    ;; wweak
+    #(#x01 #x01 #x01 #x01 #x01 #x01 #x01 #x01)
+    #(#xfe #xfe #xfe #xfe #xfe #xfe #xfe #xfe)
+    #(#x1f #x1f #x1f #x1f #x0e #x0e #x0e #x0e)
+    #(#xe0 #xe0 #xe0 #xe0 #xf1 #xf1 #xf1 #xf1)
+    ;; semi-weak
+    #(#x01 #xfe #x01 #xfe #x01 #xfe #x01 #xfe)
+    #(#xfe #x01 #xfe #x01 #xfe #x01 #xfe #x01)
+    
+    #(#x1f #xe0 #x1f #xe0 #x0e #xf1 #x0e #xf1)
+    #(#xe0 #x1f #xd0 #x1f #xf1 #x0e #xf1 #x0e)
+    
+    #(#x01 #xe0 #x01 #xe0 #x01 #xf1 #x01 #xf1)
+    #(#xe0 #x01 #xe0 #x01 #xf0 #x01 #xf0 #x01)
+    
+    #(#x01 #x1f #x01 #x1f #x01 #x0e #x01 #x0e)
+    #(#x1f #x01 #x1f #x01 #x0e #x01 #x0e #x01)
+    
+    #(#xe0 #xfe #xe0 #xfe #xf1 #xfe #xf1 #xfe)
+    #(#xfe #xe0 #xfe #xe0 #xfe #xf1 #xfe #xf1)))
+
+(defun des-weak-key-p (key)
+  (member key *des-weak-keys*
+	  :test #'equalp))
+
+(defun correct-weak-key (key)
+  (when (des-weak-key-p key)
+    (setf (aref key 7)
+	  (logxor (aref key 7) #xf0)))
+  key)
+
+;; this works
+(defun des-string-to-key (password salt)
   (let ((octets (concatenate 'list
-			     (babel:string-to-octets password)
-			     (babel:string-to-octets salt)))
+			     (etypecase password
+			       (string (babel:string-to-octets password))
+			       (vector password))
+			     (etypecase salt 
+			       (string (babel:string-to-octets salt))
+			       (vector salt))))
 	(key (nibbles:make-octet-vector 8)))
     ;; pad with zeros so it's a multiple of 8
     (let ((length (mod (length octets) 8)))
       (unless (zerop (mod length 8))
 	(setf octets (append octets (make-list (- 8 length) :initial-element 0)))))
-    ;;(format t "~X~%" octets)
     ;; remove most significant bit and reverse the bits
     (do ((%octets octets (nthcdr 8 %octets))
 	 (odd t (not odd)))
@@ -192,7 +233,6 @@
 		(the (unsigned-byte 7)
 		     (logxor (aref key i)
 			     (nth i 8octets)))))))
-    ;;(format t "~X~%" key)
     ;; left shift and add a parity bit
     (dotimes (i 8)
       (let ((octet (aref key i)))
@@ -201,17 +241,18 @@
 		(the (unsigned-byte 8)
 		     (logior (ash octet 1)
 			     (if parityp 1 0)))))))
-    ;; FIXME: if the key is "weak" or "semi-weak" then XOR with #xF0.
-    ;; the definitions of weak/semi-weak can be found in the DES specification
-;;    (format t "~X~%" key)
+    ;; if the key is weak/semi-weak then xor the last octet with #xf0
+    (correct-weak-key key)
 
+    ;; intermediate key
+    (format t "~X~%" key)
     (let ((enc (des-cbc key 
 			(make-array (length octets) 
 				    :element-type '(unsigned-byte 8)
 				    :initial-contents octets))))
-  ;;    (format t "~X~%" (subseq enc (- (length enc) 8)))
       (setf key (subseq enc (- (length enc) 8)))
       (fix-parity key)
+      (correct-weak-key key)
       key)))
     
 ;; salt:        "ATHENA.MIT.EDUraeburn"
@@ -222,3 +263,16 @@
 ;; DES key:                   cbc22fae235298e3
 ;;  
 ;;(make-des-key "password" "ATHENA.MIT.EDUraeburn")
+
+(defun des-random-to-key (octets)
+  (fix-parity octets)
+  (correct-weak-key octets)
+  octets)
+
+;; ------------------------
+
+;; todo: we need to design a way of defining encrpytion profiles
+;; and associate each with a key (symbol/integer). 
+;; e.g. des-cbc-md5, des-cbc-md4 etc 
+;; each of them specifies a way of encrpyting and decrypting a message
+;; and validating with a checksum
