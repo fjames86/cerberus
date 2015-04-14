@@ -195,8 +195,7 @@
 
 ;; ----------------------------------
 
-;; FIXE: this is broken
-;; bitstrings are in reversed ordering! 
+;; bitstrings are in reversed ordering
 ;; so bit 7 of octet 0 is bit 0,
 ;; bit 0 of octet 0 is bit 7,
 ;; bit 0 of octet 1 is bit 8,
@@ -205,10 +204,17 @@
 ;; we need to conver the integer to little-endian order, 
 ;; then reverse the bits of each octet
 (defun encode-bit-string (stream integer)
-  (let ((octets (integer-octets integer)))
-    (when (< (length octets) 4)
-      (dotimes (i (- 4 (length octets)))
-	(push 0 octets)))
+  (let ((octets (mapcar (lambda (o)
+			  (let ((i 0))
+			    (dotimes (j 8)
+			      (setf i (logior (ash i 1) (mod o 2))
+				    o (ash o -1)))
+			    i))
+			(reverse (let ((octets (integer-octets integer)))
+				   (when (< (length octets) 4)
+				     (dotimes (i (- 4 (length octets)))
+				       (push 0 octets)))
+				   octets)))))
     (encode-identifier stream 3)
     (encode-length stream (1+ (length octets)))
     (write-byte 0 stream) ;; the number of unused bits -- always zero for us since we write octets
@@ -219,9 +225,18 @@
   (decode-identifier stream)
   (let ((n (1- (decode-length stream))))
     (read-byte stream)
-    (octets-integer (loop :for i :below n 
-		       :collect (read-byte stream)))))
-
+    (let ((octets (loop :for i :below n 
+		     :collect (read-byte stream))))
+      ;; octets are in little-endian order, bits need reversing 
+      (octets-integer (mapcar (lambda (o)
+				(let ((i 0))
+				  (dotimes (j 8)
+				    (setf i (logior (ash i 1) (mod o 2))
+					  o (ash o -1)))
+				  i))
+			      (reverse octets))))))
+				
+    
 (defxtype asn1-bit-string ()
   ((stream) (decode-bit-string stream))
   ((stream value) (encode-bit-string stream value)))
