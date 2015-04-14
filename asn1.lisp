@@ -32,11 +32,11 @@
   (let ((reader (let ((n (cadr (assoc :reader options))))
 		  (if n 
 		      n
-		      (alexandria:symbolicate 'encode- name))))
+		      (alexandria:symbolicate 'decode- name))))
 	(writer (let ((n (cadr (assoc :writer options))))
 		  (if n
 		      n 
-		      (alexandria:symbolicate 'decode- name)))))
+		      (alexandria:symbolicate 'encode- name)))))
     `(progn
        (defun ,reader (,reader-stream)
 	 ,@reader-body)
@@ -115,15 +115,19 @@
      (write-byte length stream)
      1)
     (t
-     (let ((n (1+ (truncate length 256))))
-       (write-byte (logand 128 n) stream)
-       (do ((octets nil))
-	   ((zerop length)
-	    (dolist (octet octets)
-	      (write-byte octet stream))
-	    n)
-	 (push (logand length #xffffffff) octets)
-	 (setf length (ash length -8)))))))
+     ;; if the length is >127, then we split
+     ;; the length into the smallest number of octets, big-endian.
+     ;; we write the number of octets|#80 then the octets
+     (let (octets)
+       ;; split into big-endian octets
+       (do ((len length))
+           ((zerop len))
+         (push (the (unsigned-byte 8)
+                 (logand len #xff))
+               octets)
+         (setf len (ash len -8)))
+       (write-byte (logior (length octets) #x80) stream)
+       (write-sequence octets stream)))))
 
 (defun decode-length (stream)
   (let ((first (read-byte stream)))
@@ -131,12 +135,12 @@
       ((zerop (logand first 128))
        first)
       (t 
-       (do ((length 0)
-	    (power 0 (+ power 8))
-	    (n (logand first (lognot 128)) (1- n)))
-	   ((zerop n) length)
-	 (let ((byte (read-byte stream)))
-	   (setf length (logand length (ash byte power)))))))))
+       ;; the first octet is the number of octets|#x80
+       (do ((n (logand first (lognot #x80)) (1- n))
+            (len 0))
+           ((zerop n) len)
+         (let ((byte (read-byte stream)))
+           (setf len (logior (ash len 8) byte))))))))
 
 ;; -------------- booleans ---------------
 
@@ -163,17 +167,15 @@
 (defun integer-octets (integer)
   (do ((octets nil))
       ((zerop integer)
-       (or (nreverse octets)
-	   '(0)))
+       (or octets '(0)))
     (push (logand integer #xff) octets)
     (setf integer (ash integer -8))))
 
 (defun octets-integer (octets)
-  (do ((power 0 (+ power 8))
-       (o octets (cdr o))
+  (do ((o octets (cdr o))
        (i 0))
       ((null o) i)
-    (setf i (logior i (ash (car o) power)))))
+    (setf i (logior (ash i 8) (car o)))))
 
 (defun encode-integer (stream integer)
   (encode-identifier stream 2)
@@ -193,6 +195,15 @@
 
 ;; ----------------------------------
 
+;; FIXE: this is broken
+;; bitstrings are in reversed ordering! 
+;; so bit 7 of octet 0 is bit 0,
+;; bit 0 of octet 0 is bit 7,
+;; bit 0 of octet 1 is bit 8,
+;; bit 7 of octet 1 is bit 15 
+;; etc 
+;; we need to conver the integer to little-endian order, 
+;; then reverse the bits of each octet
 (defun encode-bit-string (stream integer)
   (let ((octets (integer-octets integer)))
     (when (< (length octets) 4)
@@ -361,14 +372,16 @@
 					   ;; write the contents
 					   (write-sequence contents s))))))
 				slots))))
-	 ,@(when (assoc :tag options)
-	     `((encode-identifier stream ,(cadr (assoc :tag options)) 
-				  :class ,(or (cadr (assoc :class options)) :context)
-				  :primitive nil)
-	       (encode-length stream (1+ (length bytes)))))
-	 (encode-identifier stream 16 :primitive nil)
-	 (encode-length stream (length bytes))
-	 (write-sequence bytes stream)))
+	 (let ((length-bytes (flexi-streams:with-output-to-sequence (s)
+                               (encode-length s (length bytes)))))
+           ,@(when (assoc :tag options)
+               `((encode-identifier stream ,(cadr (assoc :tag options)) 
+                                    :class ,(or (cadr (assoc :class options)) :context)
+                                    :primitive nil)
+                 (encode-length stream (+ 1 (length bytes) (length length-bytes)))))
+           (encode-identifier stream 16 :primitive nil)
+           (write-sequence length-bytes stream)
+           (write-sequence bytes stream))))
      ;; decoder
      (defun ,(alexandria:symbolicate 'decode- name) (stream)
        ,@(when (assoc :tag options)
@@ -533,7 +546,7 @@
        (read-sequence contents stream)
        (unpack (xtype-reader 'kdc-req) contents))))
   ((stream value)
-   (encode-identifier stream 10 :class :applicaiton :primitive nil)
+   (encode-identifier stream 10 :class :application :primitive nil)
    (let ((contents (pack (xtype-writer 'kdc-req) value)))
      (encode-length stream (length contents))
      (write-sequence contents stream))))
@@ -546,7 +559,7 @@
        (read-sequence contents stream)
        (unpack (xtype-reader 'kdc-req) contents))))
   ((stream value)
-   (encode-identifier stream 12 :class :applicaiton :primitive nil)
+   (encode-identifier stream 12 :class :application :primitive nil)
    (let ((contents (pack (xtype-writer 'kdc-req) value)))
      (encode-length stream (length contents))
      (write-sequence contents stream))))
@@ -555,7 +568,7 @@
 (defsequence kdc-req ()
   (pvno asn1-integer :tag 1 :initial-value 5)
   (type asn1-integer :tag 2 :initial-value 10) ;; 10 == AS, 12 == TGS
-  (data pa-data :tag 3 :optional t) ;; sequence-of 
+  (data pa-data-list :tag 3 :optional t) ;; sequence-of 
   (req-body kdc-req-body :tag 4))
 
 (defxtype ticket-list ()
