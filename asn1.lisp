@@ -164,34 +164,67 @@
 
 ;; ---------------------------------------
 
-(defun integer-octets (integer)
-  (do ((octets nil))
-      ((zerop integer)
-       (or octets '(0)))
-    (push (logand integer #xff) octets)
-    (setf integer (ash integer -8))))
+(defxtype asn1-int32 ()
+  ((stream)
+   (decode-identifier stream)
+   (let ((n (decode-length stream))
+	 (v (nibbles:make-octet-vector 4)))
+     (dotimes (i n)
+       (setf (aref v (- 3 i)) (read-byte stream)))
+     ;; check the sign bit, if it's set then this is a -ve number
+     ;; and we need to fill out the rest with #xff 
+     (when (logtest (aref v (- 4 n)) #x80)
+       ;; -ve number
+       (dotimes (i (- 4 n))
+	 (setf (aref v i) #xff)))
+     (nibbles:sb32ref/be v 0)))
+  ((stream int)
+   (encode-identifier stream 2)
+   (let ((v (nibbles:make-octet-vector 4)))
+     (setf (nibbles:sb32ref/be v 0) int)
+     ;; we need to use the minimal number of octets
+     (let ((len
+	    (cond
+	      ((and (>= int (- (expt 2 7))) (< int (expt 2 7)))
+	       1)
+	      ((and (>= int (- (expt 2 15))) (< int (expt 2 15)))
+	       2)
+	      ((and (>= int (- (expt 2 23))) (< int (expt 2 23)))
+	       3)
+	      (t 4))))
+       (encode-length stream len)
+       (write-sequence v stream :start (- 4 len))))))
 
-(defun octets-integer (octets)
-  (do ((o octets (cdr o))
-       (i 0))
-      ((null o) i)
-    (setf i (logior (ash i 8) (car o)))))
+;; for backwards compatibility 
+(defxtype* asn1-integer () asn1-int32)
 
-(defun encode-integer (stream integer)
-  (encode-identifier stream 2)
-  (let ((octets (integer-octets integer)))
-    (encode-length stream (length octets))
-    (dolist (o octets)
-      (write-byte o stream))))
+(defxtype asn1-uint32 ()
+  ((stream)
+   (decode-identifier stream)
+   (let ((n (decode-length stream))
+	 (v (nibbles:make-octet-vector 4)))
+     (dotimes (i n)
+       (setf (aref v (- 3 i)) (read-byte stream)))
+     (nibbles:ub32ref/be v 0)))
+  ((stream int)
+   (encode-identifier stream 2)
+   (let ((v (nibbles:make-octet-vector 4)))
+     (setf (nibbles:ub32ref/be v 0) int)
+     ;; we need to use the minimal number of octets
+     (let ((len
+	    (cond
+	      ((< int (expt 2 8))
+	       1)
+	      ((< int (expt 2 16))
+	       2)
+	      ((< int (expt 2 24))
+	       3)
+	      (t 4))))
+       (encode-length stream len)
+       (write-sequence v stream :start (- 4 len))))))
 
-(defun decode-integer (stream)
-  (decode-identifier stream)
-  (let ((n (decode-length stream)))
-    (octets-integer (loop :for i :below n :collect (read-byte stream)))))
 
-(defxtype asn1-integer ()
-  ((stream) (decode-integer stream))
-  ((stream value) (encode-integer stream value)))
+
 
 ;; ----------------------------------
 
@@ -486,7 +519,7 @@
 
 (defsequence encrypted-data ()
   (type asn1-integer :tag 0)
-  (kvno asn1-integer :tag 1 :optional t)
+  (kvno asn1-uint32 :tag 1 :optional t)
   (cipher asn1-octet-string :tag 2))
 
 (defsequence encryption-key ()
@@ -598,7 +631,7 @@
   (from kerberos-time :tag 4 :optional t)
   (till kerberos-time :tag 5)
   (rtime kerberos-time :tag 6 :optional t)
-  (nonce asn1-integer :tag 7)
+  (nonce asn1-uint32 :tag 7)
   (etype asn1-integer-list :tag 8) 
   (addresses host-addresses :tag 9 :optional t)
   (enc-authorization-data encrypted-data :tag 10 :optional t)
@@ -691,7 +724,7 @@
 (defsequence enc-kdc-rep-part ()
   (key encryption-key :tag 0)
   (last-req last-req :tag 1)
-  (nonce asn1-integer :tag 2)
+  (nonce asn1-uint32 :tag 2)
   (key-expriation kerberos-time :tag 3 :optional t) ;; optional
   (flags ticket-flags :tag 4) 
   (authtime kerberos-time :tag 5)
@@ -731,7 +764,7 @@
   (cusec microseconds :tag 4)  
   (ctime kerberos-time :tag 5)
   (subkey encryption-key :tag 6 :optional t) ;; optional
-  (seqno asn1-integer :tag 7 :optional t) ;;optional
+  (seqno asn1-uint32 :tag 7 :optional t) ;;optional
   (authorization-data authorization-data :tag 8 :optional t) ;; optional
   )
 
@@ -744,7 +777,7 @@
   (ctime kerberos-time :tag 0)
   (cusec microseconds :tag 1)
   (subkey encryption-key :tag 2 :optional t) ;; optional
-  (seqno asn1-integer :tag 3 :optional t) ;; optional
+  (seqno asn1-uint32 :tag 3 :optional t) ;; optional
   )
 
 (defsequence krb-safe ((:tag 20) (:class :application))
@@ -757,7 +790,7 @@
   (data asn1-octet-string :tag 0)
   (timestamp kerberos-time :tag 1 :optional t) ;; optional
   (usec microseconds :tag 2 :optional t) ;; optional
-  (seqno asn1-integer :tag 3 :optional t) ;; optional
+  (seqno asn1-uint32 :tag 3 :optional t) ;; optional
   (saddr host-address :tag 4)
   (raddr host-address :tag 5 :optional t) ;; optional
   )
@@ -772,7 +805,7 @@
   (data asn1-octet-string :tag 0)
   (timestamp kerberos-time :tag 1 :optional t) ;; optional
   (usec microseconds :tag 2 :optional t) ;; optional
-  (seqno asn1-integer :tag 3 :optional t) ;; optional
+  (seqno asn1-uint32 :tag 3 :optional t) ;; optional
   (saddr host-address :tag 4)
   (raddr host-address :tag 5 :optional t) ;; optional
   )
@@ -785,7 +818,7 @@
 
 (defsequence enc-krb-cred-part ((:tag 29) (:class :application))
   (info krb-cred-info :tag 0) ;; sequence
-  (nonce asn1-integer :tag 1)
+  (nonce asn1-uint32 :tag 1)
   (timestamp kerberos-time :tag 2 :optional t) ;; optional
   (usec microseconds :tag 3 :optional t) ;; optional
   (saddr host-address :tag 4) ;; optional

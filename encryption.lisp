@@ -72,16 +72,26 @@
       (setf c (ash c -8))
       (setf c (logxor c (aref +crc32-table+ idx))))))
 
-;; unknown whether this works
-(defun des-cbc (key octets)
+(defun des-cbc (key octets &key initialization-vector)
   (let ((result (nibbles:make-octet-vector (length octets))))
     (ironclad:encrypt (ironclad:make-cipher :des 
 					    :mode :cbc
 					    :key key
-					    :initialization-vector (let ((v (nibbles:make-octet-vector 8)))
-								     (dotimes (i 8)
-								       (setf (aref v i) (aref key i)))
-								     v))
+					    :initialization-vector 
+					    (or initialization-vector 
+						(nibbles:make-octet-vector 8)))
+		      octets
+		      result)
+    result))
+
+(defun decrypt-des-cbc (key octets &key initialization-vector)
+  (let ((result (nibbles:make-octet-vector (length octets))))
+    (ironclad:decrypt (ironclad:make-cipher :des
+					    :mode :cbc
+					    :key key 
+					    :initialization-vector 
+					    (or initialization-vector 
+						(nibbles:make-octet-vector 8)))
 		      octets
 		      result)
     result))
@@ -136,6 +146,27 @@
     ;; k is not a multiple of 8. when that code is added, remove the assert
     (assert (zerop (mod k 8)))
     result))
+
+(defun derive-key (encrypt-fn constant-octets k)
+  (when (< k (length constant-octets))
+    (setf constant-octets (n-fold constant-octets k)))
+  (do ((octets constant-octets)
+       (len 0)
+       (result nil))
+      ((>= len k) 
+       (k-truncate (coerce result '(vector (unsigned-byte 80)))
+		   k))
+    (let ((blk (funcall encrypt-fn octets)))
+      (incf len (length blk))
+      (setf octets blk
+	    result (append result (coerce blk 'list))))))
+
+
+
+
+
+;; ---------------- des stuff -----------------
+
 
 (defun reverse-bits (octet)
   (the (unsigned-byte 7)
@@ -245,11 +276,16 @@
     (correct-weak-key key)
 
     ;; intermediate key
-    (format t "~X~%" key)
+;;    (format t "~X~%" key)
     (let ((enc (des-cbc key 
 			(make-array (length octets) 
 				    :element-type '(unsigned-byte 8)
-				    :initial-contents octets))))
+				    :initial-contents octets)
+			:initialization-vector 
+			(let ((v (nibbles:make-octet-vector 8)))
+			  (dotimes (i 8)
+			    (setf (aref v i) (aref key i)))
+			  v))))
       (setf key (subseq enc (- (length enc) 8)))
       (fix-parity key)
       (correct-weak-key key)
@@ -269,10 +305,75 @@
   (correct-weak-key octets)
   octets)
 
-;; ------------------------
+;; encrpytion requires computing checksums
 
-;; todo: we need to design a way of defining encrpytion profiles
-;; and associate each with a key (symbol/integer). 
-;; e.g. des-cbc-md5, des-cbc-md4 etc 
-;; each of them specifies a way of encrpyting and decrypting a message
-;; and validating with a checksum
+(defun des-encrypt (msg encrypt-fn cksum-fn &key confounder (cksum-len 16))
+  (let ((len (length msg)))
+    (let ((buffer (nibbles:make-octet-vector (+ 8 ;; confounder
+						cksum-len 
+						len
+						(if (zerop (mod len 8))
+						    0
+						    (- 8 (mod len 8)))))))
+      ;; set a random confounder
+      (setf (nibbles:ub64ref/be buffer 0)
+	    (or confounder (random (expt 2 64))))
+      ;; copy the msg octets
+      (dotimes (i len)
+	(setf (aref buffer (+ i 8 cksum-len)) (aref msg i)))
+      (let ((cksum (funcall cksum-fn buffer)))
+	(dotimes (i cksum-len)
+	  (setf (aref buffer (+ i 8)) (aref cksum i))))
+      (funcall encrypt-fn buffer))))
+    
+(defun des-decrypt (data decrypt-fn cksum-fn &key (cksum-len 16))
+  (let ((buffer (funcall decrypt-fn data))
+	(cksum (nibbles:make-octet-vector cksum-len)))
+    (dotimes (i cksum-len)
+      (setf (aref cksum i) (aref buffer (+ 8 i))
+	    (aref buffer (+ 8 i)) 0))
+    (unless (equalp (funcall cksum-fn buffer) cksum)
+      (error "checksum's don't match"))
+    (subseq buffer (+ 8 cksum-len))))
+
+(defun encrypt-des-cbc-md5 (key msg)
+  (des-encrypt msg 
+	       (lambda (data)
+		 (des-cbc key data))
+	       (lambda (data)
+		 (md5 data))))
+
+(defun decrypt-des-cbc-md5 (key data)
+  (des-decrypt data 
+	       (lambda (data)
+		 (decrypt-des-cbc key data))
+	       (lambda (data)
+		 (md5 data))))
+
+;;----------------------- ------------------
+;; for microsoft we need some extra encyption types -
+(defun rc4-string-to-key (password)
+  (let ((octets (babel:string-to-octets password 
+					:encoding :ucs-2
+					:use-bom nil)))
+    (md4 octets)))
+
+;; rc4 == ironclad's arcfour 
+
+;; -------------------------
+
+;; we would like a generalized system for defining encryption sytstems
+;; you need to be able to register new systems, list the ones defined etc
+
+(defgeneric string-to-key (type password &key))
+
+(defmethod string-to-key ((type (eql :des)) password &key salt)
+  (des-string-to-key password (or salt "")))
+
+(defmethod string-to-key ((type (eql :rc4)) password &key)
+  (rc4-string-to-key password))
+
+;; etc ???
+
+;; ---------------------------
+
