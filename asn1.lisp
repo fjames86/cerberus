@@ -170,7 +170,7 @@
    (let ((n (decode-length stream))
 	 (v (nibbles:make-octet-vector 4)))
      (dotimes (i n)
-       (setf (aref v (- 3 i)) (read-byte stream)))
+       (setf (aref v (+ (- 4 n) i)) (read-byte stream)))
      ;; check the sign bit, if it's set then this is a -ve number
      ;; and we need to fill out the rest with #xff 
      (when (logtest (aref v (- 4 n)) #x80)
@@ -204,7 +204,7 @@
    (let ((n (decode-length stream))
 	 (v (nibbles:make-octet-vector 4)))
      (dotimes (i n)
-       (setf (aref v (- 3 i)) (read-byte stream)))
+       (setf (aref v (+ (- 4 n) i)) (read-byte stream)))
      (nibbles:ub32ref/be v 0)))
   ((stream int)
    (encode-identifier stream 2)
@@ -371,7 +371,7 @@
 
 ;; ----------------------------
 
-(defun encode-sequence-of (stream type values &key (tag 16) (class :universal) (primitive t))
+(defun encode-sequence-of (stream type values &key (tag 16) (class :universal) (primitive nil))
   (let ((bytes (flexi-streams:with-output-to-sequence (s)
 		 (dolist (value values)
 		   (write-xtype type s value)))))
@@ -656,8 +656,8 @@
     (:validate #x80000000)))
 
 (defxtype kdc-options () 
-  ((stream) (unpack-flags (decode-integer stream) *kdc-options*))
-  ((stream flags) (encode-integer stream (pack-flags flags *kdc-options*))))
+  ((stream) (unpack-flags (decode-bit-string stream) *kdc-options*))
+  ((stream flags) (encode-bit-string stream (pack-flags flags *kdc-options*))))
 
 (defxtype as-rep ()
   ((stream)

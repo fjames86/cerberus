@@ -10,7 +10,10 @@
   ((:file "package")
    (:file "asn1" :depends-on ("package"))
    (:file "messages" :depends-on ("asn1"))
-   (:file "encryption" :depends-on ("messages")))
-  :depends-on (:alexandria :nibbles :flexi-streams :babel :ironclad))
+   (:file "encryption" :depends-on ("messages"))
+   (:file "errors" :depends-on ("package"))
+   (:file "client" :depends-on ("package")))
+  :depends-on (:alexandria :nibbles :flexi-streams :babel :ironclad
+	       :usocket))
 
 

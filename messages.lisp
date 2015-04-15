@@ -53,12 +53,12 @@
      (:ipv6 ;; 16 octets
       name)
      (:netbios 
-      ;; 16 ocetets. octet 15 MUST == 0, the rest of padding MUST be #\space 
+      ;; 16 ocetets
       (let ((octets (babel:string-to-octets name)))
 	(concatenate '(vector (unsigned-byte 8))
 		     octets
-		     (loop :for i :below (- 15 (length octets)) :collect (char-code #\space))
-		     '(0))))
+		     (loop :for i :below (- 16 (length octets)) 
+			:collect (char-code #\space)))))
      (otherwise name))))
 
 ;; ------------------------------------------
