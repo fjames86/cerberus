@@ -91,7 +91,7 @@
 			     (:application 1)
 			     (:context 2)
 			     (:private 3))
-			   5)
+			   6)
 		      (if primitive 0 32))
 	      stream))
 
@@ -339,7 +339,7 @@
 
 (defun time-string (time)
   (multiple-value-bind (sec min hour day month year) (decode-universal-time time)
-    (format nil "~4,'0D~2,'0D~2,'0D~2,'0D~2,'0D~2,'0D"
+    (format nil "~4,'0D~2,'0D~2,'0D~2,'0D~2,'0D~2,'0DZ"
 	    year month day hour min sec)))
 
 (defun string-time (string)
