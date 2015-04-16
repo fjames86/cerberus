@@ -302,15 +302,6 @@
       (correct-weak-key key)
       key)))
     
-;; salt:        "ATHENA.MIT.EDUraeburn"
-;;                            415448454e412e4d49542e4544557261656275726e
-;; password:    "password"    70617373776f7264
-;; fan-fold result:           c01e38688ac86c2e
-;; intermediate key:          c11f38688ac86d2f
-;; DES key:                   cbc22fae235298e3
-;;  
-;;(make-des-key "password" "ATHENA.MIT.EDUraeburn")
-
 (defun des-random-to-key (octets)
   (fix-parity octets)
   (correct-weak-key octets)

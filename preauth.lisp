@@ -4,69 +4,10 @@
 
 (in-package #:cerberus)
 
-(defvar *pa-data-types* 
-  '((:TGS-REQ                 1)
-    (:ENC-TIMESTAMP           2)
-    (:PW-SALT                 3)
-    (:ENC-UNIX-TIME           5)
-    (:SANDIA-SECUREID         6)
-    (:SESAME                  7) 
-    (:OSF-DCE                 8)   
-    (:CYBERSAFE-SECUREID      9)   
-    (:AFS3-SALT               10)   
-    (:ETYPE-INFO              11)  
-    (:SAM-CHALLENGE           12) 
-    (:SAM-RESPONSE            13)
-    (:PK-AS-REQ-OLD           14)
-    (:PK-AS-REP-OLD           15)
-    (:PK-AS-REQ               16)
-    (:PK-AS-REP               17)
-    (:PK-OCSP-RESPONSE        18)
-    (:ETYPE-INFO2             19)
-    (:USE-SPECIFIED-KVNO      20)
-    (:SVR-REFERRAL-INFO       20)
-    (:SAM-REDIRECT            21)
-    (:GET-FROM-TYPED-DATA     22)   
-    (:PADATA                  22)   
-    (:SAM-ETYPE-INFO          23)   
-    (:ALT-PRINC               24)   
-    (:SERVER-REFERRAL         25)   
-    (:SAM-CHALLENGE2          30)   
-    (:SAM-RESPONSE2           31)   
-    (:EXTRA-TGT               41)   
-    (:PKINIT-CMS-CERTIFICATES 101)  
-    (:KRB-PRINCIPAL           102)  
-    (:KRB-REALM               103)  
-    (:TRUSTED-CERTIFIERS      104)  
-    (:CERTIFICATE-INDEX       105)  
-    (:APP-DEFINED-ERROR       106)  
-    (:REQ-NONCE               107)  
-    (:REQ-SEQ                 108)  
-    (:DH-PARAMETERS           109)  
-    (:CMS-DIGEST-ALGORITHMS   111)  
-    (:CERT-DIGEST-ALGORITHMS  112)  
-    (:PAC-REQUEST             128)  
-    (:FOR-USER                129)  
-    (:FOR-X509-USER           130)  
-    (:FOR-CHECK-DUPS          131)  
-    (:AS-CHECKSUM             132)  
-    (:FX-COOKIE               133)  
-    (:AUTHENTICATION-SET      134)  
-    (:AUTH-SET-SELECTED       135)  
-    (:FX-FAST                 136)  
-    (:FX-ERROR                137)  
-    (:ENCRYPTED-CHALLENGE     138)  
-    (:OTP-CHALLENGE           141)  
-    (:OTP-REQUEST             142)  
-    (:OTP-CONFIRM             143)  
-    (:OTP-PIN-CHANGE          144)  
-    (:EPAK-AS-REQ             145)  
-    (:EPAK-AS-REP             146)  
-    (:PKINIT-KX               147)  
-    (:PKU2U-NAME              148)  
-    (:SUPPORTED-ETYPES        165)  
-    (:EXTENDED-ERROR          166)))
-
+(defun pa-data-decode-transformer (pa)
+  (setf (pa-data-value pa) 
+	(decode-pa-data-value (pa-data-type pa) (pa-data-value pa)))
+  pa)
 
 (defgeneric decode-pa-data-value (type buffer))
 
@@ -78,4 +19,16 @@
   (decode #'decode-etype-info2 buffer))
 
 
+;; ----------------
+
+
+(defun encrypt-data (type data)
+  (pack #'encode-encrypted-data
+	(make-encrypted-data :type type
+			     :cipher data)))
+
+(defun pa-timestamp ()
+  (pack #'encode-pa-enc-ts-enc 
+	(make-pa-enc-ts-enc :patimestamp (get-universal-time)
+			    :pausec 0)))
 

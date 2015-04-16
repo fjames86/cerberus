@@ -12,8 +12,9 @@
    (:file "messages" :depends-on ("asn1"))
    (:file "encryption" :depends-on ("messages"))
    (:file "errors" :depends-on ("package"))
-   (:file "client" :depends-on ("package")))
-  :depends-on (:alexandria :nibbles :flexi-streams :babel :ironclad
-	       :usocket))
+   (:file "client" :depends-on ("package"))
+   (:file "preauth" :depends-on ("asn1")))
+  :depends-on (:alexandria :nibbles :flexi-streams :babel 
+	       :ironclad :usocket))
 
 

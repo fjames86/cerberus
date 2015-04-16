@@ -13,7 +13,7 @@
       (11 ;; as-rep
        (unpack #'decode-as-rep buffer)))))
   
-(defun send-req (msg host &optional port)
+(defun send-req-udp (msg host &optional port)
   (let ((socket (usocket:socket-connect host (or port 88)
 					:protocol :datagram
 					:element-type '(unsigned-byte 8))))
@@ -28,9 +28,9 @@
            (error "timeout")))
       (usocket:socket-close socket))))
 
-(defun as-req (kdc-host client realm &key options till-time renew-time host-addresses
+(defun as-req-udp (kdc-host client realm &key options till-time renew-time host-addresses
                                        encryption-types pa-data tickets authorization-data)
-  (send-req (pack #'encode-as-req 
+  (send-req-udp (pack #'encode-as-req 
                   (make-as-request client realm
                                    :options options
                                    :till-time till-time
@@ -79,3 +79,5 @@
 ;; notes: in the case of a :preauth-required error, the edata field of the error object contains a 
 ;; list of pa-data objcets which specify the acceptable pa-data types. 
 ;; a pa-data object of type 19 provides a list of etype-info2-entry structures
+
+
