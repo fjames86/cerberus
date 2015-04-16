@@ -238,16 +238,14 @@
 ;; then reverse the bits of each octet
 (defun encode-bit-string (stream integer)
   (let ((octets (mapcar (lambda (o)
-			  (let ((i 0))
-			    (dotimes (j 8)
-			      (setf i (logior (ash i 1) (mod o 2))
-				    o (ash o -1)))
-			    i))
-			(reverse (let ((octets (integer-octets integer)))
-				   (when (< (length octets) 4)
-				     (dotimes (i (- 4 (length octets)))
-				       (push 0 octets)))
-				   octets)))))
+                          (let ((i 0))
+                            (dotimes (j 8)
+                              (setf i (logior (ash i 1) (mod o 2))
+                                    o (ash o -1)))
+                            i))
+                        (let ((octets (nibbles:make-octet-vector 4)))
+                          (setf (nibbles:ub32ref/le octets 0) integer)
+                          (coerce octets 'list)))))
     (encode-identifier stream 3)
     (encode-length stream (1+ (length octets)))
     (write-byte 0 stream) ;; the number of unused bits -- always zero for us since we write octets
@@ -259,16 +257,19 @@
   (let ((n (1- (decode-length stream))))
     (read-byte stream)
     (let ((octets (loop :for i :below n 
-		     :collect (read-byte stream))))
-      ;; octets are in little-endian order, bits need reversing 
-      (octets-integer (mapcar (lambda (o)
-				(let ((i 0))
-				  (dotimes (j 8)
-				    (setf i (logior (ash i 1) (mod o 2))
-					  o (ash o -1)))
-				  i))
-			      (reverse octets))))))
-				
+                     :collect (read-byte stream))))
+      (nibbles:ub32ref/le (let ((v (nibbles:make-octet-vector 4)))
+                            (dotimes (i n)
+                              (let ((o (nth i octets)))
+                                (let ((int 0))
+                                  (dotimes (j 8)
+                                    (setf int 
+                                          (logior (ash int 1) (mod o 2))
+                                          o 
+                                          (ash o -1)))
+                                  (setf (aref v i) int))))
+                            v)
+                          0))))
     
 (defxtype asn1-bit-string ()
   ((stream) (decode-bit-string stream))
@@ -648,7 +649,9 @@
     (:allow-postdate #x20)
     (:postdated #x40)
     (:renewable #x100)
-    (:opt-hardward-auth #x800)
+    (:opt-hardware-auth #x800)
+    (:constrained #x4000) ;; wireshark
+    (:canonicalize #x8000) ;; wireshark
     (:disable-transited-check #x4000000)
     (:renewable-ok #x8000000)
     (:enc-tkt-in-skey #x10000000)

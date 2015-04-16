@@ -73,6 +73,9 @@
     (:CLIENT-NAME-MISMATCH          75  "Reserved for PKINIT")
     (:KDC-NAME-MISMATCH             76  "Reserved for PKINIT")))
 
+(defun krb-code-error-stat (code)
+  (first (find code *krb-errors* :key #'second :test #'=)))
+
 ;; general error
 (define-condition krb-error-t (error)
   ((stat :initarg :stat :initform nil :reader krb-error-stat)
@@ -82,12 +85,35 @@
 		     (krb-error-stat condition)
 		     (krb-error-description condition)))))
 
-(defun krb-error (code)
-  (let ((err (find code *krb-errors* :key #'second :test #'=)))
-    (if err
-	(error 'krb-error-t
-	       :stat (first err)
-	       :description (third err))
-	(error 'krb-error-t
-	       :stat code
-	       :description "Unknown error"))))
+;; would be nice to map from a krb-error structure and generate a krb-error-t 
+(defun krb-error (err)
+  (declare (type krb-error err))
+  (let ((e (find (krb-error-error-code err) *krb-errors*
+                 :key #'second :test #'=)))
+    (cond
+      ((not e) ;; unknown error type
+       (error 'krb-error-t 
+              :stat (krb-error-error-code err)
+              :description "Unknown error"))
+      ((eq (first e) :preauth-required)
+       ;; the edata field of the error may contain a list of pa-data structures
+       (if (krb-error-edata err)
+           (error 'krb-error-t
+                  :stat (first e)
+                  :description (format nil "~A~%~S"
+                                       (third e)
+                                       (mapcar (lambda (pa-data)
+                                                 ;; touch up the pa-data if we know what the value contains
+                                                 (case (pa-data-type pa-data)
+                                                   (19 (setf (pa-data-value pa-data)
+                                                             (unpack #'decode-etype-info2 
+                                                                     (pa-data-value pa-data)))))
+                                                 pa-data)
+                                               (unpack #'decode-pa-data-list (krb-error-edata err)))))
+           (error 'krb-error-t 
+                  :stat (first e)
+                  :description (third e))))
+      (t ;; a general error
+       (error 'krb-error-t 
+              :stat (first e)
+              :description (third e))))))
