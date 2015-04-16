@@ -78,7 +78,7 @@
     (otherwise etype)))
 
 (defun integer-etype (int)
-  (case etype
+  (case int
     (1 :des-cbc-crc)
     (2 :des-cbc-md4)
     (3 :des-cbc-md5)
@@ -89,7 +89,7 @@
     (18 :aes256-cts-hamc-sha1-96)
     (23 :rc4-hmac)
     (24 :rc4-hamc-exp)
-    (otherwise etype)))
+    (otherwise int)))
   
 
 (defun make-kdc-request (client-principal &key (type :as) options realm server-principal nonce

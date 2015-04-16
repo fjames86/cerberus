@@ -1,12 +1,23 @@
-
+;;;; Copyright (c) Frank James 2015 <frank.a.james@gmail.com>
+;;;; This code is licensed under the MIT license.
 
 (in-package #:cerberus)
+
+(defun usb8 (&rest sequences)
+  (apply #'concatenate 
+	 '(vector (unsigned-byte 8))
+	 sequences))
 
 (defun md4 (sequence)
   (ironclad:digest-sequence (ironclad:make-digest :md4) sequence))
 
 (defun md5 (sequence)
   (ironclad:digest-sequence (ironclad:make-digest :md5) sequence))
+
+(defun hmac-md5 (octets key)
+  (let ((h (ironclad:make-hmac key :md5)))
+    (ironclad:update-hmac h octets)
+    (ironclad:hmac-digest h)))
 
 (declaim (type (simple-array (unsigned-byte 32) (256)) +crc32-table+))
 (alexandria:define-constant +crc32-table+
@@ -56,7 +67,7 @@
 #xBDBDF21C #xCABAC28A #x53B39330 #x24B4A3A6 #xBAD03605 #xCDD70693
 #x54DE5729 #x23D967BF #xB3667A2E #xC4614AB8 #x5D681B02 #x2A6F2B94
 #xB40BBE37 #xC30C8EA1 #x5A05DF1B #x2D02EF8D))
-  :test 'equalp)
+  :test #'equalp)
 
 ;; this works
 (defun crc32 (octets)
@@ -72,7 +83,7 @@
       (setf c (ash c -8))
       (setf c (logxor c (aref +crc32-table+ idx))))))
 
-(defun des-cbc (key octets &key initialization-vector)
+(defun encrypt-des-cbc (key octets &key initialization-vector)
   (let ((result (nibbles:make-octet-vector (length octets))))
     (ironclad:encrypt (ironclad:make-cipher :des 
 					    :mode :cbc
@@ -277,7 +288,7 @@
 
     ;; intermediate key
 ;;    (format t "~X~%" key)
-    (let ((enc (des-cbc key 
+    (let ((enc (encrypt-des-cbc key 
 			(make-array (length octets) 
 				    :element-type '(unsigned-byte 8)
 				    :initial-contents octets)
@@ -339,7 +350,7 @@
 (defun encrypt-des-cbc-md5 (key msg)
   (des-encrypt msg 
 	       (lambda (data)
-		 (des-cbc key data))
+		 (encrypt-des-cbc key data))
 	       (lambda (data)
 		 (md5 data))))
 
@@ -373,7 +384,132 @@
 (defmethod string-to-key ((type (eql :rc4)) password &key)
   (rc4-string-to-key password))
 
-;; etc ???
+;; ----- -------------------------------
 
-;; ---------------------------
+;; looks like the "checksum" profile amount to defining two functions, 
+;; a get-mic, which returns the checksum, and verify-mic, which verifies it.
+
+(defvar *checksum-types* nil)
+(defun defchecksum (name value)
+  (let ((entry (assoc name *checksum-types*)))
+    (if entry 
+	(setf (second entry) value)
+	(push (list name value) *checksum-types*)))
+  name)
+(defun list-all-checksums ()
+  (mapcar #'car *checksum-types*))
+
+(defgeneric get-mic (name msg &key))
+(defgeneric verify-mic (name octets msg &key))
+
+;; -------------------------------
+
+(defchecksum :rsa-md5 7)
+(defmethod get-mic ((name (eql :rsa-md5)) msg &key)
+  (md5 msg))
+(defmethod verify-mic ((name (eql :rsa-md5)) octets msg &key)
+  (equalp (md5 msg) octets))
+
+;; ------------------------------
+
+(defchecksum :rsa-md4 2)
+(defmethod get-mic ((name (eql :rsa-md4)) msg &key)
+  (md4 msg))
+(defmethod verify-mic ((name (eql :rsa-md4)) octets msg &key)
+  (equalp (md4 msg) octets))
+
+;; ---------------------------------
+
+(defchecksum :crc32 1)
+(defmethod get-mic ((name (eql :crc32)) msg &key)
+  (crc32 msg))
+(defmethod verify-mic ((name (eql :crc32)) octets msg &key)
+  (equalp (crc32 msg) octets))
+  
+
+;; ---------------------------------
+
+(defchecksum :rsa-md5-des 8)
+(defmethod get-mic ((name (eql :rsa-md5-des)) msg &key key confounder)
+  (encrypt-des-cbc (map '(vector (unsigned-byte 8))
+			(lambda (octet)
+			  (logxor octet #xf0))
+			key)
+		   (usb8 confounder 
+			 (md5 (usb8 confounder msg)))))
+(defmethod verify-mic ((name (eql :rsa-md5-des)) octets msg &key key)
+  (let ((buffer (decrypt-des-cbc key octets)))
+    (equalp (subseq buffer 0 8) ;; confounder
+	    (md5 (usb8 (subseq buffer 0 8) msg)))))
+
+;; ------------------------------------
+
+(defchecksum :rsa-md4-des 3)
+(defmethod get-mic ((name (eql :rsa-md4-des)) msg &key key confounder)
+  (encrypt-des-cbc (map '(vector (unsigned-byte 8))
+			(lambda (octet)
+			  (logxor octet #xf0))
+			key)
+		   (usb8 confounder 
+			 (md4 (usb8 confounder msg)))))
+(defmethod verify-mic ((name (eql :rsa-md4-des)) octets msg &key key)
+  (let ((buffer (decrypt-des-cbc key octets)))
+    (equalp (subseq buffer 0 8) ;; confounder
+	    (md4 (usb8 (subseq buffer 0 8) msg)))))
+
+;; ------------------------------------
+
+(defun des-mac (msg confounder key)
+  (let ((ciphertext
+	 (encrypt-des-cbc key 
+			  (usb8 confounder 
+				msg 
+				(unless (zerop (mod (length msg) 8))
+				  (loop :for i :below (- 8 (mod (length msg) 8))
+				     :collect 0))))))
+    (subseq ciphertext (- (length ciphertext) 8))))
+			  
+(defchecksum :des-mac 4)
+(defmethod get-mic ((name (eql :des-mac)) msg &key key confounder)
+  (encrypt-des-cbc (map '(vector (unsigned-byte 8))
+			(lambda (octet)
+			  (logxor octet #xf0))
+			key)
+		   (usb8 confounder 
+			 (des-mac msg confounder key))))
+(defmethod verify-mic ((name (eql :des-mac)) octets msg &key key)
+  (let ((buffer (decrypt-des-cbc (map '(vector (unsigned-byte 8))
+				      (lambda (o) (logxor o #xf0))
+				      key)
+				 octets)))
+    (equalp (subseq buffer 0 8)
+	    (des-mac (subseq buffer 8) (subseq buffer 0 8) key))))
+
+
+;; ---------------------------------------------
+
+(defchecksum :des-mac-k 5)
+(defmethod get-mic ((name (eql :des-mac-k)) msg &key key)
+  (let ((ciphertext (encrypt-des-cbc key 
+				     (usb8 msg 
+					   (unless (zerop (mod (length msg) 8))
+					     (make-list (- 8 (mod (length msg) 8)) :initial-element 0)))
+				     :initialization-vector key)))
+    (subseq ciphertext (- (length ciphertext) 8))))
+(defmethod verify-mic ((name (eql :des-mac-k)) octets msg &key key)
+  (equalp octets (get-mic name msg :key key)))
+
+;; ----------------------------------------------
+
+;; NOTE: the msg octets MUST be prepended with the message type integer,
+;; encoded as a 4-octet little-endian integer	  
+(defchecksum :hmac-md5 -135)
+(defmethod get-mic ((name (eql :hmac-md5)) msg &key key)
+  (hmac-md5 (hmac-md5 (usb8 (babel:string-to-octets "signaturekey") '(0))
+		      key)
+	    (md5 msg)))
+(defmethod verify-mic ((name (eql :hmac-md5)) octets msg &key key)
+  (equalp (get-mic name msg :key key)
+	  octets))
+
 
