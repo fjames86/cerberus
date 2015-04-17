@@ -364,8 +364,8 @@
 ;; -------------------------
 
 (defun time-string (time)
-  (multiple-value-bind (sec min hour day month year) (decode-universal-time time)
-    (format nil "~4,'0D~2,'0D~2,'0D~2,'0D~2,'0D~2,'0DZ"
+  (multiple-value-bind (sec min hour day month year) (decode-universal-time time 0)
+    (format nil "~4,'0D~2,'0D~2,'0D~2,'0D~2,'0D~2,'0D"
 	    year month day hour min sec)))
 
 (defun string-time (string)
@@ -380,7 +380,8 @@
 			   (parse-integer hour)
 			   (parse-integer day)
 			   (parse-integer month)
-			   (parse-integer year))))
+			   (parse-integer year)
+			   0)))
 
 (defxtype generalized-time ()
   ((stream) 

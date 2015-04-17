@@ -29,3 +29,5 @@
 						   :pausec 0))))))
 
 
+;; this worked!!!1!
+;;(as-req-tcp "MYKDC-IP" (principal "MYUSERNAME") "MYDOMAIN" :pa-data (list (pa-timestamp)) :encryption-types '(:des-cbc-md5) :till-time (encode-universal-time 0 0 0 1 6 2015 0))
