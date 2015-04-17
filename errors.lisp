@@ -75,45 +75,30 @@
 
 (defun krb-code-error-stat (code)
   (first (find code *krb-errors* :key #'second :test #'=)))
+(defun krb-error-stat-code (stat)
+  (second (find stat *krb-errors* :key #'first)))
+
+(defxtype krb-error-code ()
+  ((stream)
+   (let ((code (read-xtype 'asn1-integer stream)))
+     (krb-code-error-stat code)))
+  ((stream stat)
+   (write-xtype 'asn1-integer 
+		stream 
+		(krb-error-stat-code stat))))
 
 ;; general error
 (define-condition krb-error-t (error)
-  ((stat :initarg :stat :initform nil :reader krb-error-stat)
-   (description :initform "" :initarg :description :reader krb-error-description))
+  ((err :initarg :err :initform nil :reader krb-error-err))
   (:report (lambda (condition stream)
-	     (format stream "KRB-ERROR ~A: ~A" 
-		     (krb-error-stat condition)
-		     (krb-error-description condition)))))
+	     (let ((err (krb-error-err condition)))
+	       (format stream "KRB-ERROR ~A: ~A~%~S" 
+		       (krb-error-error-code err)
+		       (third (assoc (krb-error-error-code err) *krb-errors*))
+		       (when (krb-error-edata err) 			   
+			 (krb-error-edata err)))))))
 
 ;; would be nice to map from a krb-error structure and generate a krb-error-t 
 (defun krb-error (err)
   (declare (type krb-error err))
-  (let ((e (find (krb-error-error-code err) *krb-errors*
-                 :key #'second :test #'=)))
-    (cond
-      ((not e) ;; unknown error type
-       (error 'krb-error-t 
-              :stat (krb-error-error-code err)
-              :description "Unknown error"))
-      ((eq (first e) :preauth-required)
-       ;; the edata field of the error may contain a list of pa-data structures
-       (if (krb-error-edata err)
-           (error 'krb-error-t
-                  :stat (first e)
-                  :description (format nil "~A~%~S"
-                                       (third e)
-                                       (mapcar (lambda (pa-data)
-                                                 ;; touch up the pa-data if we know what the value contains
-                                                 (case (pa-data-type pa-data)
-                                                   (19 (setf (pa-data-value pa-data)
-                                                             (unpack #'decode-etype-info2 
-                                                                     (pa-data-value pa-data)))))
-                                                 pa-data)
-                                               (unpack #'decode-pa-data-list (krb-error-edata err)))))
-           (error 'krb-error-t 
-                  :stat (first e)
-                  :description (third e))))
-      (t ;; a general error
-       (error 'krb-error-t 
-              :stat (first e)
-              :description (third e))))))
+  (error 'krb-error-t :err err))

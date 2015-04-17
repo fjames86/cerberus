@@ -422,50 +422,51 @@
 ;; http://luca.ntop.org/Teaching/Appunti/asn1.html
 ;; https://msdn.microsoft.com/en-us/library/windows/desktop/bb648645(v=vs.85).aspx
 (defmacro defsequence (name options &rest slots)
-  `(progn
-     ;; the structure 
-     (defstruct ,name 
+  (let ((struct-name (or (cadr (assoc :name options)) name)))
+    `(progn
+       ;; the structure 
+       (defstruct ,struct-name
        ,@(mapcar (lambda (slot)
 		   (destructuring-bind (slot-name slot-type &key initial-value &allow-other-keys) slot
 		     (declare (ignore slot-type))
 		     `(,slot-name ,initial-value)))
 		 slots))
-     ;; the encoder 
-     (defun ,(alexandria:symbolicate 'encode- name) (stream value)
-       (let ((bytes (flexi-streams:with-output-to-sequence (s)
-		      ,@(mapcar (lambda (slot)
-				  (destructuring-bind (slot-name slot-type &key tag optional &allow-other-keys) slot 
-				    `(let ((the-value (,(alexandria:symbolicate name '- slot-name) value)))
-				       (when ,(if optional 'the-value 't)
-					 (let ((contents (flexi-streams:with-output-to-sequence (cs)
-							   (write-xtype ',slot-type cs the-value))))
-					   ;; write the tag, if any 
-					   ,@(when tag
-					       `((encode-identifier s ,tag :class :context :primitive nil)
-						 (encode-length s (length contents))))
-					   ;; write the contents
-					   (write-sequence contents s))))))
-				slots))))
-	 (let ((length-bytes (flexi-streams:with-output-to-sequence (s)
-                               (encode-length s (length bytes)))))
-           ,@(when (assoc :tag options)
-               `((encode-identifier stream ,(cadr (assoc :tag options)) 
-                                    :class ,(or (cadr (assoc :class options)) :context)
-                                    :primitive nil)
-                 (encode-length stream (+ 1 (length bytes) (length length-bytes)))))
-           (encode-identifier stream 16 :primitive nil)
-           (write-sequence length-bytes stream)
-           (write-sequence bytes stream))))
-     ;; decoder
-     (defun ,(alexandria:symbolicate 'decode- name) (stream)
-       ,@(when (assoc :tag options)
-	   `((decode-identifier stream)
-	     (decode-length stream)))
-       (decode-identifier stream)
-       (let ((length (decode-length stream))
-	     (value (,(alexandria:symbolicate 'make- name))))
-	 ,@(unless (some (lambda (slot) (member :tag slot)) slots)
-	     `((declare (ignore length))))
+       ;; the encoder 
+       (defun ,(alexandria:symbolicate 'encode- name) (stream value)
+	 (let ((bytes (flexi-streams:with-output-to-sequence (s)
+			,@(mapcar (lambda (slot)
+				    (destructuring-bind (slot-name slot-type &key tag optional &allow-other-keys) slot 
+				      `(let ((the-value (,(alexandria:symbolicate struct-name '- slot-name) value)))
+					 (when ,(if optional 'the-value 't)
+					   (let ((contents (flexi-streams:with-output-to-sequence (cs)
+							     (write-xtype ',slot-type cs the-value))))
+					     ;; write the tag, if any 
+					     ,@(when tag
+						     `((encode-identifier s ,tag :class :context :primitive nil)
+						       (encode-length s (length contents))))
+					     ;; write the contents
+					     (write-sequence contents s))))))
+				  slots))))
+	   (let ((length-bytes (flexi-streams:with-output-to-sequence (s)
+				 (encode-length s (length bytes)))))
+	     ,@(when (assoc :tag options)
+		     `((encode-identifier stream ,(cadr (assoc :tag options)) 
+					  :class ,(or (cadr (assoc :class options)) :context)
+					  :primitive nil)
+		       (encode-length stream (+ 1 (length bytes) (length length-bytes)))))
+	     (encode-identifier stream 16 :primitive nil)
+	     (write-sequence length-bytes stream)
+	     (write-sequence bytes stream))))
+       ;; decoder
+       (defun ,(alexandria:symbolicate 'decode- name) (stream)
+	 ,@(when (assoc :tag options)
+             `((decode-identifier stream)
+	       (decode-length stream)))
+	 (decode-identifier stream)
+	 (let ((length (decode-length stream))
+	       (value (,(alexandria:symbolicate 'make- struct-name))))
+	   ,@(unless (some (lambda (slot) (member :tag slot)) slots)
+	       `((declare (ignore length))))
 	 ,(if (some (lambda (slot) (member :tag slot)) slots)
 	      `(let ((contents (nibbles:make-octet-vector length)))
 		 (read-sequence contents stream)
@@ -477,25 +478,22 @@
 		       (ecase the-tag 
 			 ,@(mapcar (lambda (slot)
 				     (destructuring-bind (slot-name slot-type &key tag &allow-other-keys) slot 
-				       `(,tag (setf (,(alexandria:symbolicate name '- slot-name) value)
+				       `(,tag (setf (,(alexandria:symbolicate struct-name '- slot-name) value)
 						    (read-xtype ',slot-type s)))))
 				   slots))))))
 	      `(progn
 		 ,@(mapcar (lambda (slot)
 			     (destructuring-bind (slot-name slot-type &key &allow-other-keys) slot
-			       `(setf (,(alexandria:symbolicate name '- slot-name) value)
+			       `(setf (,(alexandria:symbolicate struct-name '- slot-name) value)
 				      (read-xtype ',slot-type stream))))
 			   slots)))
-	 ,@(let ((transformer (assoc :decode-transformer options)))
-	     (when transformer 
-	       `((funcall ,(cadr transformer) value))))
 	 value))
      ;; define the type
      (%defxtype ',name
 		#',(alexandria:symbolicate 'decode- name)
 		#',(alexandria:symbolicate 'encode- name))
 
-     ',name))
+     ',name)))
 
 (defxtype* realm () asn1-generalized-string)
 (defxtype* kerberos-time () generalized-time)
@@ -511,17 +509,81 @@
   ((stream) (decode-sequence-of stream 'asn1-integer))
   ((stream values) (encode-sequence-of stream 'asn1-integer values)))
 
+(defxenum principal-name-type ()
+  (:unknown 0)
+  (:principal 1)
+  (:srv-inst 2)
+  (:srv-host 3)
+  (:srv-xhost 4)
+  (:uid 5)
+  (:x500 6)
+  (:smtp 7)
+  (:enterprise 10))
+
 (defsequence principal-name ()
-  (type asn1-integer :tag 0)
+  (type principal-name-type :tag 0)
   (name kerberos-strings :tag 1))
 
-(defsequence host-address ()
-  (type asn1-integer :tag 0)
+;; ----------------------------------------
+;; host addresses 
+
+(defxenum host-address-type ()
+  (:ipv4 2)
+  (:ipv6 24)
+  (:decnet-phase-4 12)
+  (:netbios 20)
+  (:directional 3))
+
+(defgeneric encode-host-address-name (type value))
+(defgeneric decode-host-address-name (type buffer))
+(defmethod encode-host-address-name (type value) value)
+(defmethod decode-host-address-name (type buffer) buffer)
+
+;; ipv4 -- host octets in big-endian order. should we convert to dotted-quad?
+(defmethod encode-host-address-name ((type (eql :ipv4)) value)
+  ;; if dotted quad then convert to vector
+  (etypecase value
+    (string (usocket:dotted-quad-to-vector-quad value))
+    (vector value)))
+(defmethod decode-host-address-name ((type (eql :ipv4)) buffer)
+  buffer)
+
+;; netbios -- a string of the name (with space character padding to 16 octets)
+(defmethod encode-host-address-name ((type (eql :netbios)) value)
+  (let ((octets (babel:string-to-octets value)))
+    (usb8 octets (loop :for i :below (- 16 (length octets)) :collect (char-code #\space)))))
+(defmethod decode-host-address-name ((type (eql :netbios)) buffer)
+  (let ((str (babel:octets-to-string buffer)))
+    (let ((p (position #\space str)))
+      (if p
+	  (subseq str 0 p)
+	  str))))
+    
+
+(defsequence %host-address ((:name host-address))
+  (type host-address-type :tag 0)
   (name asn1-octet-string :tag 1))
+
+(defxtype host-address ()
+  ((stream)
+   ;; modfiy the name 
+   (let ((ha (read-xtype '%host-address stream)))
+     (setf (host-address-name ha) (decode-host-address-name (host-address-type ha)
+							    (host-address-name ha)))
+     ha))
+  ((stream ha)
+   ;; write a copy so we don't destructively modify the original host adress
+   (write-xtype '%host-address 
+		stream
+		(make-host-address :type (host-address-type ha)
+				   :name (encode-host-address-name (host-address-type ha)
+								   (host-address-name ha))))))
 
 (defxtype host-addresses ()
   ((stream) (decode-sequence-of stream 'host-address))
   ((stream values) (encode-sequence-of stream 'host-address values)))
+
+;; -------------------------------------------
 
 (defsequence auth-data () 
   (type asn1-integer :tag 0)
@@ -532,6 +594,9 @@
   ((stream) (decode-sequence-of stream 'auth-data))
   ((stream values) (encode-sequence-of stream 'auth-data values)))
 
+;; --------------------------------------------------
+;; pre-authentication data requires us to dispatch on a decoder 
+;; depending on the value of a type enum
 
 ;; pre-authentication types
 (defxenum pa-data-types ()
@@ -596,13 +661,47 @@
   (:EXTENDED-ERROR          166))
   
 ;; NOTE: no tag 0 present 
-(defsequence pa-data ((:decode-transformer 'pa-data-decode-transformer))
+(defsequence pa-data ()
   (type pa-data-types :tag 1)
   (value asn1-octet-string :tag 2))
 
+;; use eql-specialized generics to dispatch 
+(defgeneric encode-pa-data-value (type buffer))
+(defgeneric decode-pa-data-value (type buffer))
+
+;; default methods leaves buffer untouched
+(defmethod encode-pa-data-value (type value)
+  value)
+(defmethod decode-pa-data-value (type buffer)
+  buffer)
+
+;; etype-info2
+(defmethod encode-pa-data-value ((type (eql :etype-info2)) value)
+  (pack #'encode-etype-info2 value))
+(defmethod decode-pa-data-value ((type (eql :etype-info2)) buffer)
+  (unpack #'decode-etype-info2 buffer))
+
+(defxtype wrapped-pa-data ()
+  ((stream)
+   (let ((pa (read-xtype 'pa-data stream)))
+     ;; modify the value if we know the type
+     (setf (pa-data-value pa) (decode-pa-data-value (pa-data-type pa)
+						    (pa-data-value pa)))
+     pa))
+  ((stream pa)
+   ;; modify the value if we know the type, should use a copy since we don't 
+   ;; want to destructively modify the value passed in
+   (write-xtype 'pa-data 
+		stream
+		(make-pa-data :type (pa-data-type pa)
+			      :value (encode-pa-data-value (pa-data-type pa)
+							   (pa-data-value pa))))))
+
 (defxtype pa-data-list ()
-  ((stream) (decode-sequence-of stream 'pa-data))
-  ((stream values) (encode-sequence-of stream 'pa-data values)))
+  ((stream) (decode-sequence-of stream 'wrapped-pa-data))
+  ((stream values) (encode-sequence-of stream 'wrapped-pa-data values)))
+
+;; -------------------------------------------------------
 
 ;; length is always at least 32 bits, i.e. 4 bytes. this is handled by the bit string encoder
 (defxtype kerberos-flags ()
@@ -715,6 +814,23 @@
   ((stream) (decode-sequence-of stream 'ticket))
   ((stream values) (encode-sequence-of stream 'ticket values)))
 
+(defxenum etype-enum ()
+  (:des-cbc-crc 1)
+  (:des-cbc-md4 2)
+  (:des-cbc-md5 3)
+  (:des3-cbc-md5 5)
+  (:des3-cbc-sha1 7)
+  (:des3-cbc-sha1-kd 16)
+  (:aes128-cts-hmac-sha1-96 17)
+  (:aes256-cts-hmac-sha1-96 18)
+  (:rc4-hmac 23)
+  (:rc4-hmac-exp 24)
+  (:rc4-hmac-old-exp -135))
+
+(defxtype etype-list ()
+  ((stream) (decode-sequence-of stream 'etype-enum))
+  ((stream values) (encode-sequence-of stream 'etype-enum values)))
+
 (defsequence kdc-req-body ()
   (options kdc-options :tag 0)
   (cname principal-name :tag 1)
@@ -724,7 +840,7 @@
   (till kerberos-time :tag 5)
   (rtime kerberos-time :tag 6 :optional t)
   (nonce asn1-uint32 :tag 7)
-  (etype asn1-integer-list :tag 8) 
+  (etype etype-list :tag 8) 
   (addresses host-addresses :tag 9 :optional t)
   (enc-authorization-data encrypted-data :tag 10 :optional t)
   (additional-tickets ticket-list :tag 11 :optional t) ;; sequnce-of
@@ -933,14 +1049,16 @@
   (caddr host-addresses :tag 10 :optional t) ;; op
   )
 
-(defsequence krb-error ((:tag 30) (:class :application))
+;; ----------------------------------------------------------------
+
+(defsequence %krb-error ((:tag 30) (:class :application) (:name krb-error))
   (pvno asn1-integer :tag 0)
   (type asn1-integer :tag 1)
   (ctime kerberos-time :tag 2 :optional t) ;; op
   (cusec microseconds :tag 3 :optional t) ;; op
   (stime kerberos-time :tag 4)
   (susec microseconds :tag 5)
-  (error-code asn1-integer :tag 6)
+  (error-code krb-error-code :tag 6) ;; defined in errors.lisp
   (crealm realm :tag 7 :optional t) ;; op
   (cname principal-name :tag 8 :optional t) ;; op
   (realm realm :tag 9)
@@ -949,6 +1067,31 @@
   (edata asn1-octet-string :tag 12 :optional t) ;; op
   )
 
+(defgeneric encode-krb-error-edata (type value))
+(defgeneric decode-krb-error-edata (type buffer))
+(defmethod encode-krb-error-edata (type value) value)
+(defmethod decode-krb-error-edata (type buffer) buffer)
+
+(defmethod encode-krb-error-edata ((type (eql :preauth-required)) value)
+  ;; the value MUST be a list of pa-data structures
+  (pack #'encode-pa-data-list value))
+(defmethod decode-krb-error-edata ((type (eql :preauth-required)) buffer)
+  (unpack #'decode-pa-data-list buffer))
+
+(defxtype krb-error ()
+  ((stream)
+   ;; modify the edata if we know the code 
+   (let ((err (read-xtype '%krb-error stream)))
+     (setf (krb-error-edata err) (decode-krb-error-edata (krb-error-error-code err)
+							 (krb-error-edata err)))
+     err))
+  ((stream err)
+   (let ((edata (krb-error-edata err)))
+     (setf (krb-error-edata err) (encode-krb-error-edata (krb-error-error-code err) edata))
+     (write-xtype '%krb-error stream err)
+     (setf (krb-error-edata err) edata))))
+
+;; ------------------------------------------------
 ;; sequence-of 
 (defsequence tdata ()
   (type asn1-integer :tag 0)

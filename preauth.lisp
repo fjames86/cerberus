@@ -4,21 +4,6 @@
 
 (in-package #:cerberus)
 
-(defun pa-data-decode-transformer (pa)
-  (setf (pa-data-value pa) 
-	(decode-pa-data-value (pa-data-type pa) (pa-data-value pa)))
-  pa)
-
-(defgeneric decode-pa-data-value (type buffer))
-
-;; default method leaves buffer untouched
-(defmethod decode-pa-data-value (type buffer)
-  buffer)
-
-(defmethod decode-pa-data-value ((type (eql :etype-info2)) buffer)
-  (decode #'decode-etype-info2 buffer))
-
-
 ;; ----------------
 
 
