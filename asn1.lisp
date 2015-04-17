@@ -584,10 +584,54 @@
   ((stream values) (encode-sequence-of stream 'host-address values)))
 
 ;; -------------------------------------------
+;; authorization data
 
-(defsequence auth-data () 
-  (type asn1-integer :tag 0)
+(defxenum authorization-data-type ()
+  (:ad-if-relevant 1)
+  (:ad-kdc-issued 4)
+  (:ad-and-or 5)
+  (:ad-mandatory-for-kdc 8))
+
+;; the real sequence
+(defsequence %auth-data ((:name auth-data))
+  (type authorization-data-type :tag 0)
   (data asn1-octet-string :tag 1))
+
+(defgeneric encode-auth-data-data (type value))
+(defgeneric decode-auth-data-data (type buffer))
+(defmethod encode-auth-data-data (type value) value)
+(defmethod decode-auth-data-data (type buffer) buffer)
+
+(defmethod encode-auth-data-data ((type (eql :ad-kdc-issued)) value)
+  (pack #'encode-ad-kdc-issued value))
+(defmethod decode-auth-data-data ((type (eql :ad-kdc-issued)) buffer)
+  (unpack #'decode-ad-kdc-issued buffer))
+
+(defmethod encode-auth-data-data ((type (eql :ad-and-or)) value)
+  (pack #'encode-ad-and-or value))
+(defmethod decode-auth-data-data ((type (eql :ad-and-or)) buffer)
+  (unpack #'decode-ad-and-or buffer))
+
+(defmethod encode-auth-data-data ((type (eql :ad-mandatory-for-kdc)) value)
+  (pack #'encode-authorization-data value))
+(defmethod decode-auth-data-data ((type (eql :ad-mandatory-for-kdc)) buffer)
+  (unpack #'decode-authorization-data buffer))
+
+;; wrapper to dispatch on the type
+(defxtype auth-data ()
+  ((stream)
+   ;; modify the data depending on the type
+   (let ((ad (read-xtype '%auth-data stream)))
+     (setf (auth-data-data ad) (decode-auth-data-data (auth-data-type ad)
+						      (auth-data-data ad)))
+     ad))
+  ((stream ad)
+   ;; write a copy to avoid destructively modifying the original
+   (write-xtype '%auth-data
+		stream
+		(make-auth-data :type (auth-data-type ad)
+				:data (encode-auth-data-data (auth-data-type ad)
+							     (auth-data-data ad))))))
 
 ;; sequnce of auth-data structures
 (defxtype authorization-data ()
@@ -661,7 +705,7 @@
   (:EXTENDED-ERROR          166))
   
 ;; NOTE: no tag 0 present 
-(defsequence pa-data ()
+(defsequence %pa-data ((:name pa-data))
   (type pa-data-types :tag 1)
   (value asn1-octet-string :tag 2))
 
@@ -670,10 +714,8 @@
 (defgeneric decode-pa-data-value (type buffer))
 
 ;; default methods leaves buffer untouched
-(defmethod encode-pa-data-value (type value)
-  value)
-(defmethod decode-pa-data-value (type buffer)
-  buffer)
+(defmethod encode-pa-data-value (type value) value)
+(defmethod decode-pa-data-value (type buffer) buffer)
 
 ;; etype-info2
 (defmethod encode-pa-data-value ((type (eql :etype-info2)) value)
@@ -681,9 +723,9 @@
 (defmethod decode-pa-data-value ((type (eql :etype-info2)) buffer)
   (unpack #'decode-etype-info2 buffer))
 
-(defxtype wrapped-pa-data ()
+(defxtype pa-data ()
   ((stream)
-   (let ((pa (read-xtype 'pa-data stream)))
+   (let ((pa (read-xtype '%pa-data stream)))
      ;; modify the value if we know the type
      (setf (pa-data-value pa) (decode-pa-data-value (pa-data-type pa)
 						    (pa-data-value pa)))
@@ -691,15 +733,15 @@
   ((stream pa)
    ;; modify the value if we know the type, should use a copy since we don't 
    ;; want to destructively modify the value passed in
-   (write-xtype 'pa-data 
+   (write-xtype '%pa-data 
 		stream
 		(make-pa-data :type (pa-data-type pa)
 			      :value (encode-pa-data-value (pa-data-type pa)
 							   (pa-data-value pa))))))
 
 (defxtype pa-data-list ()
-  ((stream) (decode-sequence-of stream 'wrapped-pa-data))
-  ((stream values) (encode-sequence-of stream 'wrapped-pa-data values)))
+  ((stream) (decode-sequence-of stream 'pa-data))
+  ((stream values) (encode-sequence-of stream 'pa-data values)))
 
 ;; -------------------------------------------------------
 
@@ -709,7 +751,7 @@
   ((stream value) (write-xtype 'asn1-bit-string stream value)))
 
 (defsequence encrypted-data ()
-  (type asn1-integer :tag 0)
+  (type etype-enum :tag 0)
   (kvno asn1-uint32 :tag 1 :optional t)
   (cipher asn1-octet-string :tag 2))
 
@@ -727,8 +769,28 @@
   (sname principal-name :tag 2)
   (enc-part encrypted-data :tag 3)) ;; enc-ticket-part 
 
+(defparameter *ticket-flags*
+  '((:reserved #x1)
+    (:forwardable #x2)
+    (:forwarded #x4)
+    (:proxiable #x8)
+    (:proxy #x10)
+    (:may-postdate #x20)
+    (:postdated #x40)
+    (:invalid #x80)
+    (:renewable #x100)
+    (:initial #x200)
+    (:pre-authent #x400)
+    (:hw-authent #x800)
+    (:transited #x1000)
+    (:ok-as-delegate #x2000)))
+
+(defxtype ticket-flags ()
+  ((stream) (unpack-flags (decode-bit-string stream) *ticket-flags*))
+  ((stream flags) (encode-bit-string stream (pack-flags flags *ticket-flags*))))
+
 (defsequence enc-ticket-part ((:tag 3) (:class :application))
-  (flags kerberos-flags :tag 0)
+  (flags ticket-flags :tag 0)
   (key encryption-key :tag 1)
   (crealm realm :tag 2)
   (cname principal-name :tag 3)
@@ -756,26 +818,6 @@
 	(push (car flag) flags)
 	(setf i (logand i (lognot (cadr flag))))))
     flags))
-
-(defparameter *ticket-flags*
-  '((:reserved #x1)
-    (:forwardable #x2)
-    (:forwarded #x4)
-    (:proxiable #x8)
-    (:proxy #x10)
-    (:may-postdate #x20)
-    (:postdated #x40)
-    (:invalid #x80)
-    (:renewable #x100)
-    (:initial #x200)
-    (:pre-authent #x400)
-    (:hw-authent #x800)
-    (:transited #x1000)
-    (:ok-as-delegate #x2000)))
-
-(defxtype ticket-flags ()
-  ((stream) (unpack-flags (decode-bit-string stream) *ticket-flags*))
-  ((stream flags) (encode-bit-string stream (pack-flags flags *ticket-flags*))))
     
 (defxtype as-req ()
   ((stream)
@@ -843,7 +885,7 @@
   (etype etype-list :tag 8) 
   (addresses host-addresses :tag 9 :optional t)
   (enc-authorization-data encrypted-data :tag 10 :optional t)
-  (additional-tickets ticket-list :tag 11 :optional t) ;; sequnce-of
+  (additional-tickets ticket-list :tag 11 :optional t) ;; sequence-of
   )
 
 ;; kdc-options flags 
@@ -957,7 +999,7 @@
   (type asn1-integer :initial-value 14 :tag 1)
   (options ap-options :tag 2) 
   (ticket ticket :tag 3)
-  (authenticator encrypted-data :tag 4)) ;; authentiucator
+  (authenticator encrypted-data :tag 4)) ;; authenticator
 
 (defparameter *ap-options* 
   '((:use-session-key #x1)
@@ -1039,7 +1081,7 @@
   (key encryption-key :tag 0)
   (prealm realm :tag 1 :optional t) ;; optional
   (pname principal-name :tag 2 :optional t) ;; optional
-  (flags ticket-flags :tag 3 :optional t) ;; optinal
+  (flags ticket-flags :tag 3 :optional t) ;; optional
   (authtime kerberos-time :tag 4 :optional t) ;; op
   (starttime kerberos-time :tag 5 :optional t) ;; op
   (endtime kerberos-time :tag 6 :optional t) ;; op
@@ -1092,6 +1134,7 @@
      (setf (krb-error-edata err) edata))))
 
 ;; ------------------------------------------------
+
 ;; sequence-of 
 (defsequence tdata ()
   (type asn1-integer :tag 0)
@@ -1114,12 +1157,12 @@
   ((stream values) (encode-sequence-of stream 'etype-info-entry values)))
 
 (defsequence etype-info-entry ()
-  (etype asn1-integer :tag 0)
+  (etype etype-enum :tag 0)
   (salt asn1-octet-string :tag 1 :optional t) ;; op
   )
 
 (defsequence etype-info2-entry ()
-  (etype asn1-integer :tag 0)
+  (etype etype-enum :tag 0)
   (salt kerberos-string :tag 1 :optional t) ;; op
   (s2kparams asn1-octet-string :tag 2 :optional t) ;; op
   )
