@@ -899,8 +899,8 @@
     (:postdated #x40)
     (:renewable #x100)
     (:opt-hardware-auth #x800)
-    (:constrained #x4000) ;; wireshark
-    (:canonicalize #x8000) ;; wireshark
+    (:constrained #x4000) ;; not in rfc? got this from wireshark
+    (:canonicalize #x8000) ;; not in rfc? got this from wireshark
     (:disable-transited-check #x4000000)
     (:renewable-ok #x8000000)
     (:enc-tkt-in-skey #x10000000)
@@ -919,7 +919,7 @@
        (read-sequence contents stream)
        (unpack (xtype-reader 'kdc-rep) contents))))
   ((stream value)
-   (encode-identifier stream 11 :class :applicaiton :primitive nil)
+   (encode-identifier stream 11 :class :application :primitive nil)
    (let ((contents (pack (xtype-writer 'kdc-rep) value)))
      (encode-length stream (length contents))
      (write-sequence contents stream))))
@@ -932,7 +932,7 @@
        (read-sequence contents stream)
        (unpack (xtype-reader 'kdc-rep) contents))))
   ((stream value)
-   (encode-identifier stream 13 :class :applicaiton :primitive nil)
+   (encode-identifier stream 13 :class :application :primitive nil)
    (let ((contents (pack (xtype-writer 'kdc-rep) value)))
      (encode-length stream (length contents))
      (write-sequence contents stream))))
@@ -940,7 +940,7 @@
 (defsequence kdc-rep ()
   (pvno asn1-integer :tag 0 :initial-value 5)
   (type asn1-integer :tag 1) ;; 11 == AS, 13 == TGS
-  (data pa-data-list :tag 2) ;; optional, sequence-of
+  (data pa-data-list :tag 2 :optional t) ;; optional, sequence-of
   (crealm realm :tag 3)
   (cname principal-name :tag 4)
   (ticket ticket :tag 5)
@@ -955,7 +955,7 @@
        (read-sequence contents stream)
        (unpack (xtype-reader 'enc-kdc-rep-part) contents))))
   ((stream value)
-   (encode-identifier stream 25 :class :applicaiton :primitive nil)
+   (encode-identifier stream 25 :class :application :primitive nil)
    (let ((contents (pack (xtype-writer 'enc-kdc-rep-part) value)))
      (encode-length stream (length contents))
      (write-sequence contents stream))))
@@ -968,7 +968,7 @@
        (read-sequence contents stream)
        (unpack (xtype-reader 'enc-kdc-rep-part) contents))))
   ((stream value)
-   (encode-identifier stream 26 :class :applicaiton :primitive nil)
+   (encode-identifier stream 26 :class :application :primitive nil)
    (let ((contents (pack (xtype-writer 'enc-kdc-rep-part) value)))
      (encode-length stream (length contents))
      (write-sequence contents stream))))
