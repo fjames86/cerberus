@@ -588,9 +588,18 @@
 
 (defxenum authorization-data-type ()
   (:ad-if-relevant 1)
+  (:ad-intended-for-server 2)
+  (:ad-inteded-for-application-class 3)
   (:ad-kdc-issued 4)
   (:ad-and-or 5)
-  (:ad-mandatory-for-kdc 8))
+  (:ad-mandatory-ticket-extensions 6)
+  (:ad-in-ticket-extensions 7)
+  (:ad-mandatory-for-kdc 8)
+  (:osf-dce 64)
+  (:sesame 65)
+  (:ad-osf-dce-pki-certid 66)
+  (:ad-win2k-pac 128)
+  (:ad-etype-negotiation 129))
 
 ;; the real sequence
 (defsequence %auth-data ((:name auth-data))
@@ -723,6 +732,13 @@
 (defmethod decode-pa-data-value ((type (eql :etype-info2)) buffer)
   (unpack #'decode-etype-info2 buffer))
 
+;; enc-timestamp
+(defmethod encode-pa-data-value ((type (eql :enc-timestamp)) value)
+  ;; value MUST be an encrypted-data structure
+  (pack #'encode-encrypted-data value))
+(defmethod decode-pa-data-value ((type (eql :enc-timestamp)) buffer)
+  (unpack #'decode-encrypted-data buffer))
+
 (defxtype pa-data ()
   ((stream)
    (let ((pa (read-xtype '%pa-data stream)))
@@ -845,10 +861,14 @@
      (encode-length stream (length contents))
      (write-sequence contents stream))))
 
+(defxenum kdc-req-type ()
+  (:as 10)
+  (:tgs 12))
+
 ;; note: no tag 0
 (defsequence kdc-req ()
   (pvno asn1-integer :tag 1 :initial-value 5)
-  (type asn1-integer :tag 2 :initial-value 10) ;; 10 == AS, 12 == TGS
+  (type kdc-req-type :tag 2 :initial-value 10) ;; 10 == AS, 12 == TGS
   (data pa-data-list :tag 3 :optional t) ;; sequence-of 
   (req-body kdc-req-body :tag 4))
 
@@ -937,15 +957,18 @@
      (encode-length stream (length contents))
      (write-sequence contents stream))))
 
+(defxenum kdc-rep-type ()
+  (:as 11)
+  (:tgs 13))
+
 (defsequence kdc-rep ()
   (pvno asn1-integer :tag 0 :initial-value 5)
-  (type asn1-integer :tag 1) ;; 11 == AS, 13 == TGS
+  (type kdc-rep-type :tag 1) ;; 11 == AS, 13 == TGS
   (data pa-data-list :tag 2 :optional t) ;; optional, sequence-of
   (crealm realm :tag 3)
   (cname principal-name :tag 4)
   (ticket ticket :tag 5)
   (enc-part encrypted-data :tag 6)) ;; enc-as-rep-part or enc-tgs-rep-part 
-
 
 (defxtype enc-as-rep-part ()
   ((stream)

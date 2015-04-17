@@ -17,9 +17,7 @@
 (defun make-kdc-request (client-principal &key (type :as) options realm server-principal nonce
 					    from-time till-time renew-time encryption-types host-addresses
 					    authorization-data tickets pa-data)
-  (make-kdc-req :type (ecase type
-			(:as 10)
-			(:tgs 12))
+  (make-kdc-req :type type 
 		:data pa-data
 		:req-body (make-kdc-req-body :options options
 					     :cname client-principal
