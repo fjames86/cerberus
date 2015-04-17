@@ -81,3 +81,8 @@
 ;; a pa-data object of type 19 provides a list of etype-info2-entry structures
 
 
+;; once you get a krc-rep response (from an as-req-tcp call). the enc-part slot of the kdc-rep
+;; struct contains an encrypted enc-as-rep-part structure. you need to first decrypt the encrypted
+;; data, using e.g. decrypte-des-cbc-md5. 
+;;
+;; 

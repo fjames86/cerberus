@@ -368,6 +368,8 @@
     (format nil "~4,'0D~2,'0D~2,'0D~2,'0D~2,'0D~2,'0D"
 	    year month day hour min sec)))
 
+;; FIXME: the string we are given may have a Z<timezone-offset> appended. 
+;; if it does we should pass that to the encode-universal-time function.
 (defun string-time (string)
   (let ((year (subseq string 0 4))
 	(month (subseq string 4 6))
@@ -740,6 +742,12 @@
 (defmethod decode-pa-data-value ((type (eql :enc-timestamp)) buffer)
   (unpack #'decode-encrypted-data buffer))
 
+;; pw-salt: the password salt value
+(defmethod encode-pa-data-value ((type (eql :pw-salt)) value)
+  (babel:string-to-octets value))
+(defmethod decode-pa-data-value ((type (eql :pw-salt)) buffer)
+  (babel:octets-to-string (usb8 buffer)))
+
 (defxtype pa-data ()
   ((stream)
    (let ((pa (read-xtype '%pa-data stream)))
@@ -773,8 +781,8 @@
   (cipher asn1-octet-string :tag 2))
 
 (defsequence encryption-key ()
-  (type asn1-integer :tag 1)
-  (value asn1-octet-string :tag 2))
+  (type etype-enum :tag 0)
+  (value asn1-octet-string :tag 1))
 
 (defsequence check-sum ()
   (type asn1-integer :tag 0)
@@ -1001,7 +1009,7 @@
   (key encryption-key :tag 0)
   (last-req last-req :tag 1)
   (nonce asn1-uint32 :tag 2)
-  (key-expriation kerberos-time :tag 3 :optional t) ;; optional
+  (key-expiration kerberos-time :tag 3 :optional t) ;; optional
   (flags ticket-flags :tag 4) 
   (authtime kerberos-time :tag 5)
   (starttime kerberos-time :tag 6 :optional t) ;; optional
