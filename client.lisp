@@ -5,13 +5,20 @@
 (in-package #:cerberus)
 
 (defun process-req-response (buffer)
+  "Examine the response, will either be a reply or an error"
   (let ((code (unpack #'decode-identifier buffer)))
     (ecase code
       (30 ;; error
        (let ((err (unpack #'decode-krb-error buffer)))
          (krb-error err)))
       (11 ;; as-rep
-       (unpack #'decode-as-rep buffer)))))
+       (unpack #'decode-as-rep buffer))
+      (13 ;; tgs-rep
+       (unpack #'decode-tgs-rep buffer)))))
+
+;; UDP doesn't seem very useful. Whenever I've called it I've got 
+;; a "response would be too large to fit in UDP" error. Seems like TCP
+;; is the way to do it.
   
 (defun send-req-udp (msg host &optional port)
   (let ((socket (usocket:socket-connect host (or port 88)
@@ -42,8 +49,7 @@
                                    :authorization-data authorization-data))
             kdc-host))
 
-;; ---------- tcp --------
-
+;; tcp
 (defun send-req-tcp (msg host &optional port)
   (let ((socket (usocket:socket-connect host (or port 88)
                                         :element-type '(unsigned-byte 8))))
@@ -75,14 +81,42 @@
                                    :authorization-data authorization-data))
             kdc-host))
 
+;; this should send a request to the TGS for a ticket to talk to a specific host/service/etc
+(defun tgs-req-tcp (username realm ticket)
+  (make-kdc-request (principal username)
+		    :type :tgs
+		    :realm realm
+		    :tickets (list ticket)))
+
 
 ;; notes: in the case of a :preauth-required error, the edata field of the error object contains a 
 ;; list of pa-data objcets which specify the acceptable pa-data types. 
 ;; a pa-data object of type 19 provides a list of etype-info2-entry structures
 
 
-;; once you get a krc-rep response (from an as-req-tcp call). the enc-part slot of the kdc-rep
-;; struct contains an encrypted enc-as-rep-part structure. you need to first decrypt the encrypted
-;; data, using e.g. decrypte-des-cbc-md5. 
-;;
-;; 
+;; -------------------
+
+;; this worked!!!1!
+;;(as-req-tcp "MYKDC-IP" (principal "MYUSERNAME") "MYDOMAIN" :pa-data (list (pa-timestamp)) :encryption-types '(:des-cbc-md5) :till-time (encode-universal-time 0 0 0 1 6 2015 0))
+
+(defvar *tgs-ticket* nil)
+
+(defun login (kdc-address username password realm)
+  (let ((key (string-to-key :des 
+			    password
+			    :salt (format nil "~A~A" (string-upcase realm) username))))
+    (let ((as-rep 
+	   (as-req-tcp kdc-address
+		       (principal username) 
+		       realm
+		       :pa-data (list (pa-timestamp key)) 
+		       :encryption-types '(:des-cbc-md5) 
+		       :till-time (encode-universal-time 0 0 0 1 1 1970 0))))
+      ;; we need to decrypt the enc-part of the response to verify it
+;;      (decrypt-des-cbc-md5 key (encrypted-data-cipher (kdc-rep-enc-part as-rep)))
+      (setf *tgs-ticket* (kdc-rep-ticket as-rep))
+      as-rep)))
+
+;; this should use the *tgs-ticket* to request a ticket for a specific host/service/etc
+;;(defun get-ticket ()
+  
