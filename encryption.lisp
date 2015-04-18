@@ -173,9 +173,6 @@
 	    result (append result (coerce blk 'list))))))
 
 
-
-
-
 ;; ---------------- des stuff -----------------
 
 

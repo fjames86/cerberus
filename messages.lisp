@@ -24,7 +24,7 @@
 					     :realm realm
 					     :sname server-principal
 					     :from from-time
-					     :till (or till-time (encode-universal-time 0 0 0 1 1 1970))
+					     :till (or till-time (encode-universal-time 0 0 0 1 1 1970 0))
 					     :rtime renew-time
 					     :nonce (or nonce (random (expt 2 32)))
 					     :etype encryption-types
