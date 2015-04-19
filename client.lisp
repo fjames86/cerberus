@@ -119,14 +119,14 @@
     (t (setf kdc-address *kdc-address*)))
   (setf *user-principal* (principal username)
 	*realm* realm)
-  (let ((key (string-to-key :des 
+  (let ((key (string-to-key :des-cbc-md5 
 			    password
-			    :salt (format nil "~A~A" (string-upcase realm) username))))
+			    (format nil "~A~A" (string-upcase realm) username))))
     (let ((as-rep 
 	   (as-req-tcp kdc-address
 		       *user-principal*
 		       realm
-		       :pa-data (list (pa-timestamp key)) 
+		       :pa-data (list (pa-timestamp key :des-cbc-md5))
 		       :till-time (or till-time (time-from-now :weeks 6)))))
       ;; we need to decrypt the enc-part of the response to verify it
       ;; FIXME: need to know, e.g. the nonce that we used in the request
@@ -155,7 +155,6 @@
 						   :tickets (list *tgs-ticket*)
 						   :pa-data (list (pa-timestamp (encryption-key-value 
 										 (enc-kdc-rep-part-key (kdc-rep-enc-part *as-rep*)))
-										:etype 
 										(encryption-key-type 
 										 (enc-kdc-rep-part-key (kdc-rep-enc-part *as-rep*)))))))
 			   *kdc-address*)))

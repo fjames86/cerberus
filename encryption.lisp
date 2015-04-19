@@ -335,9 +335,9 @@
     (let ((buffer (nibbles:make-octet-vector (+ 8 ;; confounder
 						cksum-len 
 						len
-						(if (zerop (mod len 8))
+						(if (zerop (mod (+ len cksum-len) 8))
 						    0
-						    (- 8 (mod len 8)))))))
+						    (- 8 (mod (+ len cksum-len) 8)))))))
       ;; set a random confounder
       (setf (nibbles:ub64ref/be buffer 0)
 	    (or confounder (random (expt 2 64))))
@@ -355,8 +355,9 @@
     (dotimes (i cksum-len)
       (setf (aref cksum i) (aref buffer (+ 8 i))
 	    (aref buffer (+ 8 i)) 0))
-    (unless (equalp (funcall cksum-fn buffer) cksum)
-      (error "checksum's don't match"))
+    (let ((ck (funcall cksum-fn buffer)))
+      (unless (every #'= ck cksum)
+	(error "checksums don't match")))
     (subseq buffer (+ 8 cksum-len))))
 
 ;;----------------------- ------------------

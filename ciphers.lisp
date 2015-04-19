@@ -96,14 +96,16 @@
 (defmethod profile-encrypt-data ((type (eql :des-cbc-crc)) octets key &key)
   (des-encrypt octets
 	       (lambda (data)
-		 (encrypt-des-cbc key data))
-	       #'crc32))
+		 (encrypt-des-cbc key data :initialization-vector key))
+	       #'crc32
+	       :cksum-len 4))
 
 (defmethod profile-decrypt-data ((type (eql :des-cbc-crc)) octets key &key)
   (des-decrypt octets
 	       (lambda (data)
-		 (decrypt-des-cbc key data))
-	       #'crc32))
+		 (decrypt-des-cbc key data :initialization-vector key))
+	       #'crc32
+	       :cksum-len 4))
 
 (defmethod string-to-key ((type (eql :des-cbc-crc)) password salt)
   (des-string-to-key password (or salt "")))

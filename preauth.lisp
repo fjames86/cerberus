@@ -9,7 +9,7 @@
 
 ;; ----------------
 
-(defun pa-timestamp (key &key (etype :des-cbc-md5))
+(defun pa-timestamp (key &optional (etype :des-cbc-md5))
   "Make a ENC-TIMESTAMP type pre-authentication data."
   (make-pa-data :type :enc-timestamp
 		:value (encrypt-data etype
