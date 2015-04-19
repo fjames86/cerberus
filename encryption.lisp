@@ -42,6 +42,21 @@
     (ironclad:decrypt c octets result)
     result))
 
+;; this works
+(defun pbkdf2 (password salt &key (iteration-count 4096) (key-length 16))
+  (ironclad::pbkdf2-derive-key :sha1
+			       (etypecase password
+				 (string (babel:string-to-octets password))
+				 (vector password))
+			       (etypecase salt
+				 (string (babel:string-to-octets salt))
+				 (vector salt))
+			       iteration-count 
+			       key-length))
+
+;; todo: we really need to work out how to implement the DK() function
+;; I have a "derive-key" fucntion but I don't think it's works properly
+;; we have test vectors in rfc3962 to test agsint 
 
 (declaim (type (simple-array (unsigned-byte 32) (256)) +crc32-table+))
 (alexandria:define-constant +crc32-table+
