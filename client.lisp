@@ -139,7 +139,8 @@
 	    *as-rep* as-rep)
       as-rep)))
 
-;; this doesn't work yet -- I got a "kdc error: kdc-pa-nosupp" 
+;; this hasn't been proven to work yet -- I got an "etype-nosupp" error
+;; which is odd because I'm using the type the kdc selected (which was des-cbc-crc)
 (defun request-ticket (server &key till-time)  
   "Request a ticket for the named principal using the TGS ticket previously requested"
   (declare (type principal-name server))
