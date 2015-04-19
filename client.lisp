@@ -16,11 +16,14 @@
       (13 ;; tgs-rep
        (unpack #'decode-tgs-rep buffer)))))
 
+;; ------------------------------------------------------------
+
 ;; UDP doesn't seem very useful. Whenever I've called it I've got 
 ;; a "response would be too large to fit in UDP" error. Seems like TCP
 ;; is the way to do it.
   
 (defun send-req-udp (msg host &optional port)
+  "Send a message to the KDC using UDP"
   (let ((socket (usocket:socket-connect host (or port 88)
 					:protocol :datagram
 					:element-type '(unsigned-byte 8))))
@@ -36,21 +39,24 @@
       (usocket:socket-close socket))))
 
 (defun as-req-udp (kdc-host client realm &key options till-time renew-time host-addresses
-                                       encryption-types pa-data tickets authorization-data)
+                                       pa-data tickets authorization-data)
   (send-req-udp (pack #'encode-as-req 
                   (make-as-request client realm
                                    :options options
                                    :till-time till-time
                                    :renew-time renew-time
                                    :host-addresses host-addresses
-                                   :encryption-types encryption-types
+                                   :encryption-types (list-all-profiles)
                                    :pa-data pa-data
                                    :tickets tickets
                                    :authorization-data authorization-data))
             kdc-host))
 
+;; -----------------------------------------------------------
+
 ;; tcp
 (defun send-req-tcp (msg host &optional port)
+  "Send a message to the KDC using TCP"
   (let ((socket (usocket:socket-connect host (or port 88)
                                         :element-type '(unsigned-byte 8))))
     (unwind-protect 
@@ -68,14 +74,14 @@
       (usocket:socket-close socket))))
 
 (defun as-req-tcp (kdc-host client realm &key options till-time renew-time host-addresses
-                                       encryption-types pa-data tickets authorization-data)
+                                       pa-data tickets authorization-data)
   (send-req-tcp (pack #'encode-as-req 
                   (make-as-request client realm
                                    :options options
                                    :till-time till-time
                                    :renew-time renew-time
                                    :host-addresses host-addresses
-                                   :encryption-types encryption-types
+                                   :encryption-types (list-all-profiles)
                                    :pa-data pa-data
                                    :tickets tickets
                                    :authorization-data authorization-data))
@@ -121,7 +127,6 @@
 		       *user-principal*
 		       realm
 		       :pa-data (list (pa-timestamp key)) 
-		       :encryption-types '(:des-cbc-md5) 
 		       :till-time (or till-time (time-from-now :weeks 6)))))
       ;; we need to decrypt the enc-part of the response to verify it
       ;; FIXME: need to know, e.g. the nonce that we used in the request
@@ -147,10 +152,10 @@
 						   :server-principal server
 						   :nonce (random (expt 2 32))
 						   :till-time (or till-time (time-from-now :weeks 6))
-						   :encryption-types '(:des-cbc-md5)
 						   :tickets (list *tgs-ticket*)
 						   :pa-data (list (pa-timestamp (encryption-key-value 
 										 (enc-kdc-rep-part-key (kdc-rep-enc-part *as-rep*)))
+										:etype 
 										(encryption-key-type 
 										 (enc-kdc-rep-part-key (kdc-rep-enc-part *as-rep*)))))))
 			   *kdc-address*)))

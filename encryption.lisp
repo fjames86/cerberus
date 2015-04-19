@@ -19,6 +19,30 @@
     (ironclad:update-hmac h octets)
     (ironclad:hmac-digest h)))
 
+(defun sha1 (octets)
+  (ironclad:digest-sequence (ironclad:make-digest :sha1) octets))
+
+(defun encrypt-aes (key octets &key initialization-vector)
+  (let ((c (ironclad:make-cipher :aes 
+				 :key key 
+				 :mode :cbc 
+				 :initialization-vector (or initialization-vector
+							    (nibbles:make-octet-vector 16))))
+	(result (nibbles:make-octet-vector (length octets))))
+    (ironclad:encrypt c octets result)
+    result))
+
+(defun decrypt-aes (key octets &key initialization-vector)
+  (let ((c (ironclad:make-cipher :aes 
+				 :key key 
+				 :mode :cbc 
+				 :initialization-vector (or initialization-vector
+							    (nibbles:make-octet-vector 16))))
+	(result (nibbles:make-octet-vector (length octets))))
+    (ironclad:decrypt c octets result)
+    result))
+
+
 (declaim (type (simple-array (unsigned-byte 32) (256)) +crc32-table+))
 (alexandria:define-constant +crc32-table+
     (make-array 256 
@@ -187,7 +211,7 @@
 	       (ash (logand octet #x40) -6))))
 
 (defun fix-parity (key)
-  (dotimes (i 8)
+  (dotimes (i (length key))
     (let ((octet (aref key i)))
       (let ((parityp (zerop (mod (logcount octet) 2)))
 	    (evenp (zerop (mod (aref key i) 2))))
@@ -335,20 +359,6 @@
       (error "checksum's don't match"))
     (subseq buffer (+ 8 cksum-len))))
 
-(defun encrypt-des-cbc-md5 (key msg)
-  (des-encrypt msg 
-	       (lambda (data)
-		 (encrypt-des-cbc key data))
-	       (lambda (data)
-		 (md5 data))))
-
-(defun decrypt-des-cbc-md5 (key data)
-  (des-decrypt data 
-	       (lambda (data)
-		 (decrypt-des-cbc key data))
-	       (lambda (data)
-		 (md5 data))))
-
 ;;----------------------- ------------------
 ;; for microsoft we need some extra encyption types -
 (defun rc4-string-to-key (password)
@@ -364,12 +374,5 @@
 ;; we would like a generalized system for defining encryption sytstems
 ;; you need to be able to register new systems, list the ones defined etc
 
-(defgeneric string-to-key (type password &key))
-
-(defmethod string-to-key ((type (eql :des)) password &key salt)
-  (des-string-to-key password (or salt "")))
-
-(defmethod string-to-key ((type (eql :rc4)) password &key)
-  (rc4-string-to-key password))
 
 
