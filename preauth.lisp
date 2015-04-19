@@ -17,3 +17,20 @@
 					   (make-pa-enc-ts-enc :patimestamp (get-universal-time)
 							       :pausec 0))
 				     key)))
+
+(defun pa-tgs-req (ticket key cname &optional (etype :des-cbc-md5))
+  (make-pa-data 
+   :type :tgs-req
+   :value
+   (make-ap-req :options '(:use-session-key)
+		:ticket ticket
+		:authenticator 
+		(encrypt-data etype
+			      (pack #'encode-authenticator 
+				    (make-authenticator :crealm (ticket-realm ticket)
+							:cname cname
+							:ctime (get-universal-time)
+							:cusec 0))
+			      key))))
+
+  

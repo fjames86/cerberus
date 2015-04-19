@@ -253,6 +253,13 @@
 
 ;; ----------------------------------
 
+(defun reverse-octet (octet)
+  (let ((i 0))
+    (dotimes (j 8)
+      (setf i (logior (ash i 1) (mod octet 2))
+	    octet (ash octet -1)))
+    i))
+
 ;; bitstrings are in reversed ordering
 ;; so bit 7 of octet 0 is bit 0,
 ;; bit 0 of octet 0 is bit 7,
@@ -262,12 +269,7 @@
 ;; we need to conver the integer to little-endian order, 
 ;; then reverse the bits of each octet
 (defun encode-bit-string (stream integer)
-  (let ((octets (mapcar (lambda (o)
-                          (let ((i 0))
-                            (dotimes (j 8)
-                              (setf i (logior (ash i 1) (mod o 2))
-                                    o (ash o -1)))
-                            i))
+  (let ((octets (mapcar #'reverse-octet
                         (let ((octets (nibbles:make-octet-vector 4)))
                           (setf (nibbles:ub32ref/le octets 0) integer)
                           (coerce octets 'list)))))
@@ -285,14 +287,7 @@
                      :collect (read-byte stream))))
       (nibbles:ub32ref/le (let ((v (nibbles:make-octet-vector 4)))
                             (dotimes (i n)
-                              (let ((o (nth i octets)))
-                                (let ((int 0))
-                                  (dotimes (j 8)
-                                    (setf int 
-                                          (logior (ash int 1) (mod o 2))
-                                          o 
-                                          (ash o -1)))
-                                  (setf (aref v i) int))))
+			      (setf (aref v i) (reverse-octet (nth i octets))))
                             v)
                           0))))
     
@@ -602,7 +597,8 @@
   (:sesame 65)
   (:ad-osf-dce-pki-certid 66)
   (:ad-win2k-pac 128)
-  (:ad-etype-negotiation 129))
+  (:ad-etype-negotiation 129)
+  (:kerb-local 142))
 
 ;; the real sequence
 (defsequence %auth-data ((:name auth-data))
@@ -747,6 +743,12 @@
   (babel:string-to-octets value))
 (defmethod decode-pa-data-value ((type (eql :pw-salt)) buffer)
   (babel:octets-to-string (usb8 buffer)))
+
+;; tgs-req: an ap-req structure
+(defmethod encode-pa-data-value ((type (eql :tgs-req)) value)
+  (pack #'encode-ap-req value))
+(defmethod decode-pa-data-value ((type (eql :tgs-req)) buffer)
+  (unpack #'decode-ap-req buffer))
 
 (defxtype pa-data ()
   ((stream)
@@ -1019,12 +1021,27 @@
   (sname principal-name :tag 10)
   (caddr host-addresses :tag 11 :optional t)) ;; optional
 
-(defsequence lreq () 
-  (type asn1-integer :tag 0)
+;; ------------------------------------
+
+(defxenum lreq-type ()
+  (:none 0) ;; no info encoded in value
+  (:last-tgt 1) ;; last initial request for a tgt
+  (:last-init 2) ;; last initial request
+  (:newest-tgt 3) ;; time of newest tgt
+  (:last-renewal 4) ;; time of last renewal
+  (:last-request 5) ;; time of last request of any type
+  (:password-expire 6) ;; time when password will expire
+  (:account-expire 7)) ;; time when account will expire
+
+(defsequence lreq ()
+  (type lreq-type :tag 0)
   (value kerberos-time :tag 1))
+
 (defxtype last-req ()
   ((stream) (decode-sequence-of stream 'lreq))
   ((stream values) (encode-sequence-of stream 'lreq values)))
+
+;; -------------------------------------
 
 (defsequence ap-req ((:tag 14) (:class :application))
   (pvno asn1-integer :initial-value 5 :tag 0)
@@ -1034,8 +1051,10 @@
   (authenticator encrypted-data :tag 4)) ;; authenticator
 
 (defparameter *ap-options* 
-  '((:use-session-key #x1)
-    (:mutual-required #x2)))
+  '((:reserved #x1)
+    (:use-session-key #x2)
+    (:mutual-required #x4)))
+
 (defxtype ap-options ()
   ((stream) (unpack-flags (decode-bit-string stream) *ap-options*))
   ((stream flags) (encode-bit-string stream (pack-flags flags *ap-options*))))

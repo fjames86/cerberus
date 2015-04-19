@@ -148,15 +148,17 @@
   (let ((rep (send-req-tcp (pack #'encode-tgs-req 
 				 (make-kdc-request *user-principal*
 						   :type :tgs
+						   :options '(:renewable :enc-tkt-in-skey)
 						   :realm *realm*
 						   :server-principal server
 						   :nonce (random (expt 2 32))
 						   :till-time (or till-time (time-from-now :weeks 6))
-						   :tickets (list *tgs-ticket*)
-						   :pa-data (list (pa-timestamp (encryption-key-value 
+						   :pa-data (list (pa-tgs-req *tgs-ticket* 
+									      (encryption-key-value 
 										 (enc-kdc-rep-part-key (kdc-rep-enc-part *as-rep*)))
-										(encryption-key-type 
-										 (enc-kdc-rep-part-key (kdc-rep-enc-part *as-rep*)))))))
+									      *user-principal*
+									      (encryption-key-type 
+									       (enc-kdc-rep-part-key (kdc-rep-enc-part *as-rep*)))))))
 			   *kdc-address*)))
     ;; if we got here then the response is a kdc-rep structure (for tgs)
     rep))
