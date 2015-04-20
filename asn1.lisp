@@ -726,6 +726,12 @@
 (defmethod decode-pa-data-value (type buffer) buffer)
 
 ;; etype-info2
+(defmethod encode-pa-data-value ((type (eql :etype-info)) value)
+  (pack #'encode-etype-info value))
+(defmethod decode-pa-data-value ((type (eql :etype-info)) buffer)
+  (unpack #'decode-etype-info buffer))
+
+;; etype-info2
 (defmethod encode-pa-data-value ((type (eql :etype-info2)) value)
   (pack #'encode-etype-info2 value))
 (defmethod decode-pa-data-value ((type (eql :etype-info2)) buffer)
@@ -1170,6 +1176,13 @@
   (pack #'encode-pa-data-list value))
 (defmethod decode-krb-error-edata ((type (eql :preauth-required)) buffer)
   (unpack #'decode-pa-data-list buffer))
+
+(defmethod encode-krb-error-edata ((type (eql :preauth-failed)) value)
+  ;; the value MUST be a list of pa-data structures
+  (pack #'encode-pa-data-list value))
+(defmethod decode-krb-error-edata ((type (eql :preauth-failed)) buffer)
+  (unpack #'decode-pa-data-list buffer))
+
 
 (defxtype krb-error ()
   ((stream)
