@@ -50,7 +50,7 @@
   (des-decrypt octets
 	       (lambda (data)
 		 (decrypt-des-cbc key data :initialization-vector initialization-vector))
-	       #'md4))
+	       #'md5))
 
 (defmethod string-to-key ((type (eql :des-cbc-md5)) password salt)
   (des-string-to-key password (or salt "")))

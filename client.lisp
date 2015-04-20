@@ -139,8 +139,7 @@
 	    *as-rep* as-rep)
       as-rep)))
 
-;; this hasn't been proven to work yet -- I got an "etype-nosupp" error
-;; which is odd because I'm using the type the kdc selected (which was des-cbc-crc)
+;; this worked. I got a ticket for the principal named
 (defun request-ticket (server &key till-time)  
   "Request a ticket for the named principal using the TGS ticket previously requested"
   (declare (type principal-name server))
@@ -154,13 +153,50 @@
 						   :server-principal server
 						   :nonce (random (expt 2 32))
 						   :till-time (or till-time (time-from-now :weeks 6))
+                           :encryption-types (list (encryption-key-type 
+                                                    (enc-kdc-rep-part-key (kdc-rep-enc-part *as-rep*))))
 						   :pa-data (list (pa-tgs-req *tgs-ticket* 
 									      (encryption-key-value 
 										 (enc-kdc-rep-part-key (kdc-rep-enc-part *as-rep*)))
 									      *user-principal*
-									      (encryption-key-type 
-									       (enc-kdc-rep-part-key (kdc-rep-enc-part *as-rep*)))))))
+                                          (encryption-key-type 
+                                           (enc-kdc-rep-part-key (kdc-rep-enc-part *as-rep*)))))))
 			   *kdc-address*)))
     ;; if we got here then the response is a kdc-rep structure (for tgs)
-    rep))
+    ;; we need to decrypt the enc-part of the response to verify it
+    ;; FIXME: need to know, e.g. the nonce that we used in the request
+    (let ((enc (unpack #'decode-enc-as-rep-part 
+                       (decrypt-data (kdc-rep-enc-part rep)
+                                     (encryption-key-value 
+										 (enc-kdc-rep-part-key (kdc-rep-enc-part *as-rep*)))))))
+      ;; should really validate the reponse here, e.g. check nonce etc.
+      ;; lets just descrypt it and replace the enc-part with the decrypted enc-part 
+      (setf (kdc-rep-enc-part rep) enc))
+
+      rep))
+
+;; next stage: need to package up an AP-REQ to be sent to the application server
+;; typically this message will be encapsualted in the application protocol, so we don't do any direct 
+;; networking for this, just return a packed octet buffer
+(defun pack-ap-req (cname etype key ticket &optional mutual)
+  (pack #'encode-ap-req 
+        (make-ap-req :options (when mutual '(:mutual-required))
+                     :ticket ticket
+                     :authenticator 
+                     (encrypt-data etype
+                                   (pack #'encode-authenticator 
+                                         (make-authenticator :crealm (ticket-realm ticket)
+                                                             :cname cname
+                                                             :ctime (get-universal-time)
+                                                             :cusec 0))
+                                   key))))
+
+;; this would be used by the server to examine the authenticator and validate the request
+(defun unpack-ap-req (buffer key)
+  (let ((req (unpack #'decode-ap-req buffer)))
+    ;; the authenticator is an encrypted data, we need to decrypt it first 
+    (setf (ap-req-authenticator req)
+          (decrypt-data (ap-req-authenticator req)
+                        key))
+    req))
 
