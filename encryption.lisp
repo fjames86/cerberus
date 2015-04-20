@@ -54,9 +54,28 @@
 			       iteration-count 
 			       key-length))
 
+(defun encrypt-des3 (key octets &key initialization-vector)
+  (let ((c (ironclad:make-cipher :3des 
+				 :mode :cbc 
+				 :key key
+				 :initialization-vector (or initialization-vector (nibbles:make-octet-vector 8))))
+	(result (nibbles:make-octet-vector (length octets))))
+    (ironclad:encrypt c octets result)
+    result))
+
+(defun decrypt-des3 (key octets &key initialization-vector)
+  (let ((c (ironclad:make-cipher :3des 
+				 :mode :cbc 
+				 :key key
+				 :initialization-vector (or initialization-vector (nibbles:make-octet-vector 8))))
+	(result (nibbles:make-octet-vector (length octets))))
+    (ironclad:decrypt c octets result)
+    result))
+
 ;; todo: we really need to work out how to implement the DK() function
 ;; I have a "derive-key" fucntion but I don't think it's works properly
 ;; we have test vectors in rfc3962 to test agsint 
+
 
 (declaim (type (simple-array (unsigned-byte 32) (256)) +crc32-table+))
 (alexandria:define-constant +crc32-table+
@@ -152,7 +171,7 @@
 ;; http://opensource.apple.com/source/Kerberos/Kerberos-62/KerberosFramework/Kerberos5/Sources/lib/crypto/nfold.c
 ;; this works
 (defun n-fold (octets n)
-  "The horrific n-fold function as specifed in the rfc."
+  "The horrific n-fold function as specifed in the rfc. n is a number of bits"
   (let ((inbytes (ash (* (length octets) 8) -3))
 	(outbytes (ash n -3)))
     (let ((lcm (lcm inbytes outbytes))
@@ -197,7 +216,8 @@
     (assert (zerop (mod k 8)))
     result))
 
-(defun derive-key (encrypt-fn constant-octets k)
+;; does this even work -- maybe should be removed
+(defun derive-key% (encrypt-fn constant-octets k)
   (when (< k (length constant-octets))
     (setf constant-octets (n-fold constant-octets k)))
   (do ((octets constant-octets)
