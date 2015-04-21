@@ -154,7 +154,6 @@
   "Request a ticket for the named principal using the TGS ticket previously requested"  
   (declare (type login-token token)
            (type principal-name server))
-  (unless *kdc-address* (error "must have set the kdc address"))
   (let* ((as-rep (login-token-rep token))
          (ekey (enc-kdc-rep-part-key (kdc-rep-enc-part as-rep))))
     (let ((rep (send-req-tcp 
