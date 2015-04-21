@@ -898,7 +898,7 @@
   (:des-cbc-md4 2)
   (:des-cbc-md5 3)
   (:des3-cbc-md5 5)
-  (:des3-cbc-sha1 7)
+  (:des3-cbc-sha1 7) ;; deprecated, should use the -kd version instead
   (:des3-cbc-sha1-kd 16)
   (:aes128-cts-hmac-sha1-96 17)
   (:aes256-cts-hmac-sha1-96 18)

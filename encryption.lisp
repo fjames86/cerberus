@@ -396,12 +396,6 @@
     (subseq buffer (+ 8 cksum-len))))
 
 ;;----------------------- ------------------
-;; for microsoft we need some extra encyption types -
-(defun rc4-string-to-key (password)
-  (let ((octets (babel:string-to-octets password 
-					:encoding :ucs-2
-					:use-bom nil)))
-    (md4 octets)))
 
 ;; rc4 == ironclad's arcfour 
 
