@@ -146,56 +146,68 @@
 ;; --------------------- rc4-hmac -----------------
 
 ;;(defprofile :rc4-hmac)
+;;(defprofile :rc4-hmac-exp) ???
 
-(defun encrypt-rc4 (key data &key export (type 0))
+(defmethod profile-block-size ((type (eql :rc4-hmac))) 1)
+(defmethod profile-key-seed-length ((type (eql :rc4-hmac))) 1) ;; ???
+(defmethod profile-check-sum-size ((type (eql :rc4-hmac))) (* 16 8))
+
+;; copied from the apple codes
+(defun rc4-translate-usage (usage)
+  (case usage
+    (3 8) ;; ap-rep encrypted part 
+    (9 8) ;; tgs-rep encrypted part 
+    (23 13) ;; sign-wrap token
+    (otherwise usage)))
+    
+(defun encrypt-rc4 (key data &key export (usage 0))
+  ;; translate the usage
+  (setf usage (rc4-translate-usage usage))
+
   (let ((l40 (usb8 (babel:string-to-octets "fortybits") '(0 0 0 0 0)))
         (k1 nil)
         (k2 nil)
         (k3 nil))
     (if export 
-        (setf (nibbles:ub32ref/le l40 10) type
+        (setf (nibbles:ub32ref/le l40 10) usage
               k1 (hmac-md5 l40 key))
         (setf k1 (hmac-md5 (let ((v (nibbles:make-octet-vector 4)))
-                             (setf (nibbles:ub32ref/le v 0) type)
+                             (setf (nibbles:ub32ref/le v 0) usage)
                              v)
                            key)))
     (setf k2 (subseq k1 0 16))
     (when export
       (dotimes (i 9)
         (setf (aref k1 (+ i 7)) #xab)))
-    (let ((result (nibbles:make-octet-vector (+ 24 (length data)))))
+    (let ((result (nibbles:make-octet-vector (+ 8 (length data)))))
       ;; set the confounder 
-      (setf (nibbles:ub64ref/be result 16) (random (expt 2 64)))
+      (setf (nibbles:ub64ref/be result 0) (random (expt 2 64)))
       ;; copy the data
       (dotimes (i (length data))
-        (setf (aref result (+ i 24)) (aref data i)))
+        (setf (aref result (+ i 8)) (aref data i)))
       ;; compute the checksum 
       (let ((cksum (hmac-md5 result k2)))
-        (dotimes (i 16)
-          (setf (aref result i) (aref cksum i))))
-      (setf k3 (hmac-md5 (subseq result 0 16) k1))
-      (let ((cipher (ironclad:make-cipher :arcfour 
-                                          :key k3
-                                          :mode :stream)))
-        ;; encrypt the confounder 
-        (ironclad:encrypt-in-place cipher result :start 16 :end 24))
-      (let ((cipher (ironclad:make-cipher :arcfour 
-                                          :key k3
-                                          :mode :stream)))
-        ;; encrypt the confounder 
-        (ironclad:encrypt-in-place cipher result :start 24))
-      result)))
+	(setf k3 (hmac-md5 cksum k1))
+	(let ((cipher (ironclad:make-cipher :arcfour 
+					    :key k3
+					    :mode :stream)))
+	  ;; encrypt the result  
+	  (ironclad:encrypt-in-place cipher result))
+      (usb8 cksum result)))))
       
-(defun decrypt-rc4 (key data &key export (type 0))
+(defun decrypt-rc4 (key data &key export (usage 0))
+  ;; translate the usage
+  (setf usage (rc4-translate-usage usage))
+
   (let ((l40 (usb8 (babel:string-to-octets "fortybits") '(0 0 0 0 0)))
         (k1 nil)
         (k2 nil)
         (k3 nil))
     (if export 
-        (setf (nibbles:ub32ref/le l40 10) type
+        (setf (nibbles:ub32ref/le l40 10) usage
               k1 (hmac-md5 l40 key))
         (setf k1 (hmac-md5 (let ((v (nibbles:make-octet-vector 4)))
-                             (setf (nibbles:ub32ref/le v 0) type)
+                             (setf (nibbles:ub32ref/le v 0) usage)
                              v)
                            key)))
     (setf k2 (subseq k1 0 16))
@@ -211,40 +223,35 @@
       (let ((cipher (ironclad:make-cipher :arcfour 
                                           :key k3
                                           :mode :stream)))
-        (let ((res (nibbles:make-octet-vector 8)))
-          (ironclad:decrypt cipher data res :ciphertext-start 16 :ciphertext-end 24)
-          (setf confounder res)))
-      ;; decrypt the data
-      (let ((cipher (ironclad:make-cipher :arcfour 
-                                        :key k3
-                                        :mode :stream)))    
-        ;; decrypt the data
-        (setf plaintext (nibbles:make-octet-vector (- (length data) 24)))
-        (ironclad:decrypt cipher data plaintext :ciphertext-start 24))
+        (let ((result (nibbles:make-octet-vector (- (length data) 16))))
+          (ironclad:decrypt cipher data result
+			    :ciphertext-start 16)
+          (setf confounder (subseq result 0 8)
+		plaintext (subseq result 8))))
 
       ;; validate the checksum 
-      (unless (equalp (hmac-md5 (usb8 (make-list 16 :initial-element 0) confounder plaintext) k2)
+      (unless (equalp (hmac-md5 (usb8 confounder plaintext) k2)
                       cksum)
 ;;        (warn "checksums don't match"))
         (error "checksums don't match"))
       plaintext)))
       
 (defmethod profile-encrypt-data ((type (eql :rc4-hmac)) octets key &key usage)
-  (encrypt-rc4 key octets :type usage))
+  (encrypt-rc4 key octets :usage usage))
 
 (defmethod profile-decrypt-data ((type (eql :rc4-hmac)) octets key &key usage)
-  (decrypt-rc4 key octets :type usage))
+  (decrypt-rc4 key octets :usage usage))
 
 ;; for microsoft we need some extra encyption types -
 (defun rc4-string-to-key (password)
-  (let ((octets (babel:string-to-octets password 
-					:encoding :ucs-2
-					:use-bom nil)))
-    (md4 octets)))
+  (md4 (babel:string-to-octets password 
+			       :encoding :ucs-2
+			       :use-bom nil)))
 
 (defmethod string-to-key ((type (eql :rc4-hmac)) password salt)
   (rc4-string-to-key password))
 
+;; what is this for the rc4 system?
 ;;(defmethod random-to-key ((type (eql :rc4-hmac)) octets &key))
 
 (defmethod pseudo-random ((type (eql :rc4-hmac)) key octets &key)
