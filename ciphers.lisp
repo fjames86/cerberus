@@ -23,6 +23,8 @@
 (defgeneric profile-check-sum-size (type)
   (:documentation "Returns the number of bits the checksum returns"))
 
+(defgeneric profile-encrypt (type key octets))
+(defgeneric profile-decrypt (type key octets))
 (defgeneric profile-encrypt-data (type octets key &key))
 (defgeneric profile-decrypt-data (type octets key &key))
 
@@ -50,6 +52,11 @@
 (defmethod profile-block-size ((type (eql :des-cbc-md5))) 64)
 (defmethod profile-key-seed-length ((type (eql :des-cbc-md5))) 64)
 (defmethod profile-check-sum-size ((type (eql :des-cbc-md5))) (* 16 8))
+
+(defmethod profile-encrypt ((type (eql :des-cbc-md5)) key octets)
+  (encrypt-des-cbc key octets))
+(defmethod profile-decrypt ((type (eql :des-cbc-md5)) key octets)
+  (decrypt-des-cbc key octets))
 
 (defmethod profile-encrypt-data ((type (eql :des-cbc-md5)) octets key &key initialization-vector)
   (des-encrypt octets
@@ -80,6 +87,10 @@
 (defmethod profile-key-seed-length ((type (eql :des-cbc-md4))) 64)
 (defmethod profile-check-sum-size ((type (eql :des-cbc-md4))) (* 16 8))
 
+(defmethod profile-encrypt ((type (eql :des-cbc-md4)) key octets)
+  (encrypt-des-cbc key octets))
+(defmethod profile-decrypt ((type (eql :des-cbc-md4)) key octets)
+  (decrypt-des-cbc key octets))
 
 (defmethod profile-encrypt-data ((type (eql :des-cbc-md4)) octets key &key initialization-vector)
   (des-encrypt octets
@@ -114,6 +125,11 @@
 (defmethod profile-block-size ((type (eql :des-cbc-crc))) 64)
 (defmethod profile-key-seed-length ((type (eql :des-cbc-crc))) 64)
 (defmethod profile-check-sum-size ((type (eql :des-cbc-crc))) (* 4 8))
+
+(defmethod profile-encrypt ((type (eql :des-cbc-crc)) key octets)
+  (encrypt-des-cbc key octets))
+(defmethod profile-decrypt ((type (eql :des-cbc-crc)) key octets)
+  (decrypt-des-cbc key octets))
 
 (defmethod profile-encrypt-data ((type (eql :des-cbc-crc)) octets key &key initialization-vector)
   (des-encrypt octets
@@ -160,6 +176,22 @@
     (23 13) ;; sign-wrap token
     (otherwise usage)))
     
+(defmethod profile-encrypt ((type (eql :rc4-hmac)) key octets)
+  (let ((cipher (ironclad:make-cipher :arcfour 
+				      :key key
+				      :mode :stream))
+	(result (nibbles:make-octet-vector (length octets))))
+    (ironclad:encrypt cipher octets result)
+    result))
+
+(defmethod profile-decrypt ((type (eql :rc4-hmac)) key octets)
+  (let ((cipher (ironclad:make-cipher :arcfour 
+				      :key key
+				      :mode :stream))
+	(result (nibbles:make-octet-vector (length octets))))
+    (ironclad:decrypt cipher octets result)
+    result))
+
 (defun encrypt-rc4 (key data &key export (usage 0))
   ;; translate the usage
   (setf usage (rc4-translate-usage usage))
@@ -264,11 +296,16 @@
 ;; the rfc uses both des3-cbc-hmac-sha1-kd and des3-cbc-sha1-kd to refer to this 
 ;; profile. we use the shorter version of the name 
 
-(defprofile :des3-cbc-sha1-kd)
+;;(defprofile :des3-cbc-sha1-kd)
 
 (defmethod profile-block-size ((type (eql :des3-cbc-sha1-kd))) 64)
 (defmethod profile-key-seed-length ((type (eql :des3-cbc-sha1-kd))) 168)
 (defmethod profile-check-sum-size ((type (eql :des3-cbc-sha1-kd))) (* 20 8))
+
+(defmethod profile-encrypt ((type (eql :des3-cbc-sha1-kd)) key octets)
+  (encrypt-des3 key octets))
+(defmethod profile-decrypt ((type (eql :des3-cbc-sha1-kd)) key octets)
+  (decrypt-des3 key octets))
 
 (defmethod profile-encrypt-data ((type (eql :des3-cbc-sha1-kd)) octets key &key initialization-vector)
   (des-encrypt octets
@@ -341,9 +378,7 @@
 		  (do ((i 0)
 		       (prev nil))
 		      ((>= i k))
-		    (let ((ki (profile-encrypt-data type 
-						    (or prev constant)
-						    key)))
+		    (let ((ki (profile-encrypt type key (or prev constant))))
 		      (write-sequence ki v)
 		      (incf i (* 8 (length ki)))
 		      (setf prev ki))))
@@ -363,5 +398,17 @@
 				  (vector constant)))))
 
 	    
-	 
+      
 ;;#(#xdc #xe0 #x6b #x1f #x64 #xc8 #x57 #xa1 #x1c #x3d #xb5 #x7c #x51 #x89 #x9b #x2c #xc1 #x79 #x10 #x08 #xce #x97 #x3b #x92)
+
+
+;; derive key:
+;; 1. if constant length is less than block size, n-fold to block size
+;; 2. repeatedly encrypt blocksize bytes until we have keylength bytes
+;; 3. call the make-key function (dependent on the provider) 
+
+;; profile functions:
+;; encrypt: basic data encryption, doesn't do any checksums or anything.
+;; this is different to encrypting a message (where we need a confounder, checksum)
+;; make-key: transforms the bytes into a key. is this random-to-key?
+

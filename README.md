@@ -39,10 +39,10 @@ The public API is not finalized yet, but at the moment you can do something like
 
 ```
 ;; login to the authenticaiton server and get a TGT
-CL-USER> (defparameter *token* (login "username" "password" "realm" :kdc-address "10.1.0.1"))
+CERBERUS> (defparameter *token* (login "username" "password" "realm" :kdc-address "10.1.0.1"))
 ;; request a ticket to the application server using the TGT
-CL-USER> (defparameter *ticket* (request-ticket *token* (principal "service" :instance "hostname" :type :srv-inst)))
-CL-USER> ;; profit????
+CERBERUS> (defparameter *ticket* (request-ticket *token* (principal "service" :instance "hostname" :type :srv-inst)))
+CERBERUS> ;; profit????
 ```
 
 ## 4. Encryption profiles
