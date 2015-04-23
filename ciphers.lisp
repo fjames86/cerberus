@@ -47,12 +47,13 @@
   (make-encrypted-data :type type
 		       :cipher (profile-encrypt-data type octets key :usage usage)))
 
-(defun decrypt-data (ed key &key)
+(defun decrypt-data (ed key &key usage)
   "Takes an ENCRYPTED-DATA structure and returns the decrypted result."
   (declare (type encrypted-data ed))
   (profile-decrypt-data (encrypted-data-type ed)
 			(encrypted-data-cipher ed)
-			key))
+			key
+			:usage usage))
 
 ;; ------------ des-cbc-md5 ------------
 
@@ -170,12 +171,18 @@
 
 ;; --------------------- rc4-hmac -----------------
 
-;;(defprofile :rc4-hmac)
-;;(defprofile :rc4-hmac-exp) ???
+;; the RC4-HMAC profile, needed for Windows
+
+(defprofile :rc4-hmac)
+(defprofile :rc4-hmac-exp) 
 
 (defmethod profile-block-size ((type (eql :rc4-hmac))) 1)
 (defmethod profile-key-seed-length ((type (eql :rc4-hmac))) 1) ;; ???
 (defmethod profile-check-sum-size ((type (eql :rc4-hmac))) 16)
+
+(defmethod profile-block-size ((type (eql :rc4-hmac-exp))) 1)
+(defmethod profile-key-seed-length ((type (eql :rc4-hmac-exp))) 1) ;; ???
+(defmethod profile-check-sum-size ((type (eql :rc4-hmac-exp))) 16)
 
 ;; copied from the apple codes
 (defun rc4-translate-usage (usage)
@@ -200,6 +207,23 @@
 	(result (nibbles:make-octet-vector (length octets))))
     (ironclad:decrypt cipher octets result)
     result))
+
+(defmethod profile-encrypt ((type (eql :rc4-hmac-exp)) key octets)
+  (let ((cipher (ironclad:make-cipher :arcfour 
+				      :key key
+				      :mode :stream))
+	(result (nibbles:make-octet-vector (length octets))))
+    (ironclad:encrypt cipher octets result)
+    result))
+
+(defmethod profile-decrypt ((type (eql :rc4-hmac-exp)) key octets)
+  (let ((cipher (ironclad:make-cipher :arcfour 
+				      :key key
+				      :mode :stream))
+	(result (nibbles:make-octet-vector (length octets))))
+    (ironclad:decrypt cipher octets result)
+    result))
+
 
 (defun encrypt-rc4 (key data &key export (usage 0))
   ;; translate the usage
@@ -257,7 +281,6 @@
         (setf (aref k1 (+ i 7)) #xab)))
 
     (let ((cksum (subseq data 0 16))
-          (confounder nil)
           (plaintext nil))
       ;; compute the k3 from the checksum
       (setf k3 (hmac-md5 cksum k1))
@@ -269,8 +292,7 @@
         (let ((result (nibbles:make-octet-vector (- (length data) 16))))
           (ironclad:decrypt cipher data result
 			    :ciphertext-start 16)
-          (setf confounder (subseq result 0 8)
-		plaintext (subseq result 8))
+          (setf plaintext (subseq result 8))
 
 	  ;; validate the checksum 
 	  (unless (equalp (hmac-md5 result k2) cksum)
@@ -283,12 +305,22 @@
 (defmethod profile-decrypt-data ((type (eql :rc4-hmac)) octets key &key usage)
   (decrypt-rc4 key octets :usage usage))
 
+(defmethod profile-encrypt-data ((type (eql :rc4-hmac-exp)) octets key &key usage)
+  (encrypt-rc4 key octets :usage usage :export t))
+
+(defmethod profile-decrypt-data ((type (eql :rc4-hmac-exp)) octets key &key usage)
+  (decrypt-rc4 key octets :usage usage :export t))
+
+
 (defun rc4-string-to-key (password)
   (md4 (babel:string-to-octets password 
 			       :encoding :ucs-2
 			       :use-bom nil)))
 
 (defmethod string-to-key ((type (eql :rc4-hmac)) password salt)
+  (rc4-string-to-key password))
+
+(defmethod string-to-key ((type (eql :rc4-hmac-exp)) password salt)
   (rc4-string-to-key password))
 
 ;; what is this for the rc4 system? maybe we don't need it 
@@ -299,12 +331,17 @@
     (ironclad:update-hmac h octets)
     (ironclad:hmac-digest h)))
 
+(defmethod pseudo-random ((type (eql :rc4-hmac-exp)) key octets &key)
+  (let ((h (ironclad:make-hmac key :sha1)))
+    (ironclad:update-hmac h octets)
+    (ironclad:hmac-digest h)))
+
 ;; ---------------- des3-cbc-sha1-kd -----------------
 
 ;; the rfc uses both des3-cbc-hmac-sha1-kd and des3-cbc-sha1-kd to refer to this 
 ;; profile. we use the shorter version of the name 
 
-;;(defprofile :des3-cbc-sha1-kd)
+(defprofile :des3-cbc-sha1-kd)
 
 (defmethod profile-block-size ((type (eql :des3-cbc-sha1-kd))) 8)
 (defmethod profile-key-seed-length ((type (eql :des3-cbc-sha1-kd))) 21)
@@ -352,12 +389,11 @@
     (let ((tmpkey (usb8 (des3-random-to-key (subseq octets 0 7))
 			(des3-random-to-key (subseq octets 7 14))
 			(des3-random-to-key (subseq octets 14 21)))))
-      (format t "~X" tmpkey)
+;;      (format t "~X" tmpkey)
       (derive-key :des3-cbc-sha1-kd 
 		  tmpkey 
 		  (babel:string-to-octets "kerberos")))))
 
-	
 (defmethod string-to-key ((type (eql :des3-cbc-sha1-kd)) password salt)
   (des3-string-to-key password salt))
 
@@ -367,8 +403,6 @@
 	(des3-random-to-key (subseq octets 14 21))))
 
       
-;;#(#xdc #xe0 #x6b #x1f #x64 #xc8 #x57 #xa1 #x1c #x3d #xb5 #x7c #x51 #x89 #x9b #x2c #xc1 #x79 #x10 #x08 #xce #x97 #x3b #x92)
-
 ;; FIXME: what for this? it's not specified in the rfc
 ;; Answer: look in th "simplified profile", it's something like
 ;; tmp1 = H(octet), tmp2 = truncate tmp1 to multiple of m
@@ -380,6 +414,7 @@
 ;; ------------
 
 (defun derive-random (type key constant)
+  "The DR() function specified in the rfc."
   ;; n-fold the constant into blk-size bits if it is too small
   (let ((blk-size (profile-block-size type))
 	(k (profile-key-seed-length type)))
@@ -395,10 +430,8 @@
 		      (setf prev ki))))
 		(* k 8))))
 
-;; the rfc suggests we need to concatenate some constants with the constant
-;; there are 3 of them
-;; I don't think this works correctly 
 (defun derive-key (type key constant)
+  "The DK() function specified in the rfc."
   (let ((rand
 	 (derive-random type 
 			key
@@ -410,6 +443,7 @@
     (format t "dr: ~X~%" rand)
     (random-to-key type rand)))
 
+;; this works with the des3-cbc-sha1-kd profile!
 (defun simplified-profile-derive-keys (type key usage)
   "Computes the 3 keys from the base protocol key. Returns (values Kc Ke Ki) where
 Kc ::= used for the get-mic function
@@ -422,6 +456,7 @@ Ki ::= used for the encryption checksum."
 	    (derive-key type key (usb8 u '(#x55))))))
 
 (defun simplified-profile-encrypt (type key octets usage)
+  "Encrypt message data for a simplified profile system."
   (let ((blk-size (profile-block-size type)))
     (let ((data (usb8 (loop :for i :below blk-size :collect (random 256))
 		      octets
@@ -435,6 +470,7 @@ Ki ::= used for the encryption checksum."
 	    (profile-hmac type ki data))))))
 
 (defun simplified-profile-decrypt (type key octets usage)
+  "Decrypt message data for a simplified profile system."
   (let ((ciphertext (subseq octets 0 (- (length octets) (profile-hmac-length type))))
 	(hmac (subseq octets (- (length octets) (profile-hmac-length type)))))
     (multiple-value-bind (kc ke ki) (simplified-profile-derive-keys type key usage)
@@ -445,3 +481,26 @@ Ki ::= used for the encryption checksum."
 	;; drop the random confounder
 	(subseq plaintext (profile-block-size type))))))
 
+
+(defun key-usage (name)
+  "Convert a symbol naming a usage scenario into a usage number"
+  (ecase name 
+    (:pa-enc-timestamp 1) ;; pa-enc-timestamp 
+    (:ticket 2) ;; enc-part of a ticket
+    (:as-rep 3) ;; enc-part of a as-rep message
+    (:tgs-session 4) ;; as above but when the session key is used
+    (:tgs-sub-session 5) ;; subsession key used when encrypting the enc-auth-data part of a tgs-req
+    (:authenticator-tgs-req 6) ;; in a pa-tgs-req ap-data field
+    (:pa-tgs-req 7) ;; enctypred authenticator in a pa-tgs-req 
+    (:tgs-rep 8) ;; enc-part of a tgs-rep if using session key 
+    (:tgs-rep-subkey 9) ;; enc-part of tgs-rep if using authenticator subkey
+    (:authenticator-cksum 10) ;; in normal messages
+    (:ap-req 11) ;; encrypted authenticator in an ap-req 
+    (:ap-rep 12) ;; enc-part of a enc-ap-rep-part 
+    (:krb-priv 13) ;; enc-part of a krb-priv message
+    (:krb-cred 14) ;; enc-part of a krb-cred message
+    (:krb-safe 15) ;; checksum of a krb-safe message
+    (:kdc-issued 19) ;; kdc-issued message checksum
+    ))
+  
+    
