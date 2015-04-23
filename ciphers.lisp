@@ -17,26 +17,35 @@
   *profiles*)
 
 (defgeneric profile-block-size (type)
-  (:documentation "Returns number of bits the block size uses"))
+  (:documentation "Returns number of bytes the block size uses"))
 (defgeneric profile-key-seed-length (type)
-  (:documentation "Returns the number of bits the key uses (called k in the rfc)"))
+  (:documentation "Returns the number of bytes the key uses (k in the rfc = 8*this)"))
 (defgeneric profile-check-sum-size (type)
-  (:documentation "Returns the number of bits the checksum returns"))
+  (:documentation "Returns the number of bytes the checksum returns"))
 
+;; basic encryption routines. only required for simple profiles 
+;; i.e. those which use the derive-key function
 (defgeneric profile-encrypt (type key octets))
 (defgeneric profile-decrypt (type key octets))
+
+;; encrypt messages, including checksums+confounders
 (defgeneric profile-encrypt-data (type octets key &key))
 (defgeneric profile-decrypt-data (type octets key &key))
 
+;; key generation routines
 (defgeneric string-to-key (type password salt))
 (defgeneric random-to-key (type octets &key))
 (defgeneric pseudo-random (type key octets &key))
 
-;; the main fucntions that should be called
-(defun encrypt-data (type octets key &key)
+;; the simplified profile requires a specified hmac function
+(defgeneric profile-hmac (type key octets))
+(defgeneric profile-hmac-length (type))
+
+;; encrypt a message and return a kerberos EncryptedData structure
+(defun encrypt-data (type octets key &key usage)
   "Encrypt the octets using the key with cipher type. Returns an ENCRYPTED-DATA structure."
   (make-encrypted-data :type type
-		       :cipher (profile-encrypt-data type octets key)))
+		       :cipher (profile-encrypt-data type octets key :usage usage)))
 
 (defun decrypt-data (ed key &key)
   "Takes an ENCRYPTED-DATA structure and returns the decrypted result."
@@ -49,9 +58,9 @@
 
 (defprofile :des-cbc-md5)
 
-(defmethod profile-block-size ((type (eql :des-cbc-md5))) 64)
-(defmethod profile-key-seed-length ((type (eql :des-cbc-md5))) 64)
-(defmethod profile-check-sum-size ((type (eql :des-cbc-md5))) (* 16 8))
+(defmethod profile-block-size ((type (eql :des-cbc-md5))) 8)
+(defmethod profile-key-seed-length ((type (eql :des-cbc-md5))) 8)
+(defmethod profile-check-sum-size ((type (eql :des-cbc-md5))) 16)
 
 (defmethod profile-encrypt ((type (eql :des-cbc-md5)) key octets)
   (encrypt-des-cbc key octets))
@@ -83,9 +92,9 @@
 
 (defprofile :des-cbc-md4)
 
-(defmethod profile-block-size ((type (eql :des-cbc-md4))) 64)
-(defmethod profile-key-seed-length ((type (eql :des-cbc-md4))) 64)
-(defmethod profile-check-sum-size ((type (eql :des-cbc-md4))) (* 16 8))
+(defmethod profile-block-size ((type (eql :des-cbc-md4))) 8)
+(defmethod profile-key-seed-length ((type (eql :des-cbc-md4))) 8)
+(defmethod profile-check-sum-size ((type (eql :des-cbc-md4))) 16)
 
 (defmethod profile-encrypt ((type (eql :des-cbc-md4)) key octets)
   (encrypt-des-cbc key octets))
@@ -122,9 +131,9 @@
 
 (defprofile :des-cbc-crc)
 
-(defmethod profile-block-size ((type (eql :des-cbc-crc))) 64)
-(defmethod profile-key-seed-length ((type (eql :des-cbc-crc))) 64)
-(defmethod profile-check-sum-size ((type (eql :des-cbc-crc))) (* 4 8))
+(defmethod profile-block-size ((type (eql :des-cbc-crc))) 8)
+(defmethod profile-key-seed-length ((type (eql :des-cbc-crc))) 8)
+(defmethod profile-check-sum-size ((type (eql :des-cbc-crc))) 4)
 
 (defmethod profile-encrypt ((type (eql :des-cbc-crc)) key octets)
   (encrypt-des-cbc key octets))
@@ -166,7 +175,7 @@
 
 (defmethod profile-block-size ((type (eql :rc4-hmac))) 1)
 (defmethod profile-key-seed-length ((type (eql :rc4-hmac))) 1) ;; ???
-(defmethod profile-check-sum-size ((type (eql :rc4-hmac))) (* 16 8))
+(defmethod profile-check-sum-size ((type (eql :rc4-hmac))) 16)
 
 ;; copied from the apple codes
 (defun rc4-translate-usage (usage)
@@ -201,10 +210,10 @@
         (k2 nil)
         (k3 nil))
     (if export 
-        (setf (nibbles:ub32ref/le l40 10) usage
+        (setf (nibbles:ub32ref/le l40 10) (or usage 0)
               k1 (hmac-md5 l40 key))
         (setf k1 (hmac-md5 (let ((v (nibbles:make-octet-vector 4)))
-                             (setf (nibbles:ub32ref/le v 0) usage)
+                             (setf (nibbles:ub32ref/le v 0) (or usage 0))
                              v)
                            key)))
     (setf k2 (subseq k1 0 16))
@@ -236,22 +245,24 @@
         (k2 nil)
         (k3 nil))
     (if export 
-        (setf (nibbles:ub32ref/le l40 10) usage
+        (setf (nibbles:ub32ref/le l40 10) (or usage 0)
               k1 (hmac-md5 l40 key))
         (setf k1 (hmac-md5 (let ((v (nibbles:make-octet-vector 4)))
-                             (setf (nibbles:ub32ref/le v 0) usage)
+                             (setf (nibbles:ub32ref/le v 0) (or usage 0))
                              v)
                            key)))
     (setf k2 (subseq k1 0 16))
     (when export 
       (dotimes (i 9)
         (setf (aref k1 (+ i 7)) #xab)))
-    (setf k3 (hmac-md5 (subseq data 0 16) k1))
 
     (let ((cksum (subseq data 0 16))
           (confounder nil)
           (plaintext nil))
-      ;; decrypt the confounder 
+      ;; compute the k3 from the checksum
+      (setf k3 (hmac-md5 cksum k1))
+
+      ;; decrypt the ciphertext
       (let ((cipher (ironclad:make-cipher :arcfour 
                                           :key k3
                                           :mode :stream)))
@@ -259,13 +270,11 @@
           (ironclad:decrypt cipher data result
 			    :ciphertext-start 16)
           (setf confounder (subseq result 0 8)
-		plaintext (subseq result 8))))
+		plaintext (subseq result 8))
 
-      ;; validate the checksum 
-      (unless (equalp (hmac-md5 (usb8 confounder plaintext) k2)
-                      cksum)
-;;        (warn "checksums don't match"))
-        (error "checksums don't match"))
+	  ;; validate the checksum 
+	  (unless (equalp (hmac-md5 result k2) cksum)
+	    (error "checksums don't match"))))
       plaintext)))
       
 (defmethod profile-encrypt-data ((type (eql :rc4-hmac)) octets key &key usage)
@@ -274,7 +283,6 @@
 (defmethod profile-decrypt-data ((type (eql :rc4-hmac)) octets key &key usage)
   (decrypt-rc4 key octets :usage usage))
 
-;; for microsoft we need some extra encyption types -
 (defun rc4-string-to-key (password)
   (md4 (babel:string-to-octets password 
 			       :encoding :ucs-2
@@ -283,7 +291,7 @@
 (defmethod string-to-key ((type (eql :rc4-hmac)) password salt)
   (rc4-string-to-key password))
 
-;; what is this for the rc4 system?
+;; what is this for the rc4 system? maybe we don't need it 
 ;;(defmethod random-to-key ((type (eql :rc4-hmac)) octets &key))
 
 (defmethod pseudo-random ((type (eql :rc4-hmac)) key octets &key)
@@ -298,9 +306,9 @@
 
 ;;(defprofile :des3-cbc-sha1-kd)
 
-(defmethod profile-block-size ((type (eql :des3-cbc-sha1-kd))) 64)
-(defmethod profile-key-seed-length ((type (eql :des3-cbc-sha1-kd))) 168)
-(defmethod profile-check-sum-size ((type (eql :des3-cbc-sha1-kd))) (* 20 8))
+(defmethod profile-block-size ((type (eql :des3-cbc-sha1-kd))) 8)
+(defmethod profile-key-seed-length ((type (eql :des3-cbc-sha1-kd))) 21)
+(defmethod profile-check-sum-size ((type (eql :des3-cbc-sha1-kd))) 20)
 
 (defmethod profile-encrypt ((type (eql :des3-cbc-sha1-kd)) key octets)
   (encrypt-des3 key octets))
@@ -326,9 +334,9 @@
   (declare (type (vector (unsigned-byte 8) 7) octets))
   (let ((v (nibbles:make-octet-vector 8)))
     (dotimes (i 7)
-      (setf (aref v i) (reverse-octet (aref octets i))
+      (setf (aref v i) (aref octets i) 
 	    (aref v 7) (logior (aref v 7) 
-			       (ash (if (logtest (aref octets i) #x80)
+			       (ash (if (logtest (aref octets i) #x1)
 					1
 					0)
 				    (1+ i)))))
@@ -358,6 +366,9 @@
 	(des3-random-to-key (subseq octets 7 14))
 	(des3-random-to-key (subseq octets 14 21))))
 
+      
+;;#(#xdc #xe0 #x6b #x1f #x64 #xc8 #x57 #xa1 #x1c #x3d #xb5 #x7c #x51 #x89 #x9b #x2c #xc1 #x79 #x10 #x08 #xce #x97 #x3b #x92)
+
 ;; FIXME: what for this? it's not specified in the rfc
 ;; Answer: look in th "simplified profile", it's something like
 ;; tmp1 = H(octet), tmp2 = truncate tmp1 to multiple of m
@@ -372,43 +383,65 @@
   ;; n-fold the constant into blk-size bits if it is too small
   (let ((blk-size (profile-block-size type))
 	(k (profile-key-seed-length type)))
-    (when (< (* 8 (length constant)) blk-size)
-      (setf constant (n-fold constant blk-size)))
+    (when (< (length constant) blk-size)
+      (setf constant (n-fold constant (* blk-size 8))))
     (k-truncate (flexi-streams:with-output-to-sequence (v)
 		  (do ((i 0)
 		       (prev nil))
 		      ((>= i k))
 		    (let ((ki (profile-encrypt type key (or prev constant))))
 		      (write-sequence ki v)
-		      (incf i (* 8 (length ki)))
+		      (incf i (length ki))
 		      (setf prev ki))))
-		k)))
+		(* k 8))))
 
-;; the rfc suggets we need to concatenate some constants with the constant
+;; the rfc suggests we need to concatenate some constants with the constant
 ;; there are 3 of them
 ;; I don't think this works correctly 
 (defun derive-key (type key constant)
-  (random-to-key type 
-		 (derive-random type 
-				key
-				(etypecase constant
-				  (integer (let ((v (nibbles:make-octet-vector 4)))
-					     (setf (nibbles:sb32ref/be v 0) constant)
-					     v))
-				  (vector constant)))))
+  (let ((rand
+	 (derive-random type 
+			key
+			(etypecase constant
+			  (integer (let ((v (nibbles:make-octet-vector 4)))
+				     (setf (nibbles:sb32ref/be v 0) constant)
+				     v))
+			  (vector constant)))))
+    (format t "dr: ~X~%" rand)
+    (random-to-key type rand)))
 
-	    
-      
-;;#(#xdc #xe0 #x6b #x1f #x64 #xc8 #x57 #xa1 #x1c #x3d #xb5 #x7c #x51 #x89 #x9b #x2c #xc1 #x79 #x10 #x08 #xce #x97 #x3b #x92)
+(defun simplified-profile-derive-keys (type key usage)
+  "Computes the 3 keys from the base protocol key. Returns (values Kc Ke Ki) where
+Kc ::= used for the get-mic function
+Ke ::= used for encryption
+Ki ::= used for the encryption checksum."
+  (let ((u (nibbles:make-octet-vector 4)))
+    (setf (nibbles:ub32ref/be u 0) usage)
+    (values (derive-key type key (usb8 u '(#x99)))
+	    (derive-key type key (usb8 u '(#xaa)))
+	    (derive-key type key (usb8 u '(#x55))))))
 
+(defun simplified-profile-encrypt (type key octets usage)
+  (let ((blk-size (profile-block-size type)))
+    (let ((data (usb8 (loop :for i :below blk-size :collect (random 256))
+		      octets
+		      ;; padding 
+		      (unless (zerop (mod (length octets) blk-size))
+			(loop :for i :below (- blk-size (mod (length octets) blk-size))
+			   :collect 0)))))
+    (multiple-value-bind (kc ke ki) (simplified-profile-derive-keys type key usage)
+      (declare (ignore kc))
+      (usb8 (profile-encrypt type ke data)
+	    (profile-hmac type ki data))))))
 
-;; derive key:
-;; 1. if constant length is less than block size, n-fold to block size
-;; 2. repeatedly encrypt blocksize bytes until we have keylength bytes
-;; 3. call the make-key function (dependent on the provider) 
-
-;; profile functions:
-;; encrypt: basic data encryption, doesn't do any checksums or anything.
-;; this is different to encrypting a message (where we need a confounder, checksum)
-;; make-key: transforms the bytes into a key. is this random-to-key?
+(defun simplified-profile-decrypt (type key octets usage)
+  (let ((ciphertext (subseq octets 0 (- (length octets) (profile-hmac-length type))))
+	(hmac (subseq octets (- (length octets) (profile-hmac-length type)))))
+    (multiple-value-bind (kc ke ki) (simplified-profile-derive-keys type key usage)
+      (declare (ignore kc))
+      (let ((plaintext (profile-decrypt type ke ciphertext)))
+	(unless (equalp hmac (profile-hmac type ki plaintext))
+	  (error "checksums don't match"))
+	;; drop the random confounder
+	(subseq plaintext (profile-block-size type))))))
 

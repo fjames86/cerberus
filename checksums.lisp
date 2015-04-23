@@ -124,13 +124,14 @@
 ;; encoded as a 4-octet little-endian integer	  
 (defchecksum :hmac-md5 -138)
 
-(defmethod get-mic ((name (eql :hmac-md5)) msg &key key type)
+(defmethod get-mic ((name (eql :hmac-md5)) msg &key key usage)
   (hmac-md5 (md5 (usb8 (let ((v (nibbles:make-octet-vector 4)))
-                         (setf (nibbles:ub32ref/le v 0) (or type 0))
+                         (setf (nibbles:ub32ref/le v 0) 
+			       (rc4-translate-usage (or usage 0)))
                          v)
                        msg))
-            (hmac-md5 key 
-                      (usb8 (babel:string-to-octets "signaturekey") '(0)))))
+            (hmac-md5 (usb8 (babel:string-to-octets "signaturekey") '(0))
+		      key)))
       
 
 (defmethod verify-mic ((name (eql :hmac-md5)) octets msg &key key type)

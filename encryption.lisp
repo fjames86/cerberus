@@ -210,7 +210,7 @@
 
 (defun k-truncate (octets k)
   "k is the number of bits"
-  (let ((result (subseq octets 0 (1+ (truncate k 8)))))
+  (let ((result (subseq octets 0 (truncate k 8))))
     ;; FIXME: shouild also clear the high bits of the final octet if
     ;; k is not a multiple of 8. when that code is added, remove the assert
     (assert (zerop (mod k 8)))
