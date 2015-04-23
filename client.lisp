@@ -212,7 +212,7 @@
 ;; I just decrypted a ticket encryped with the rc4-hmac ! 
 ;; (unpack #'decode-enc-ticket-part 
 ;;   (decrypt-data (ticket-enc-part (kdc-rep-ticket *myticket*)) 
-;;  			(string-to-key :rc4-hmac "EL1psan" nil)
+;;  			(string-to-key :rc4-hmac "password" nil)
 ;;			:usage (key-usage :ticket)))
 ;; where *myticket* is a tgs-rep structure
 ;; 

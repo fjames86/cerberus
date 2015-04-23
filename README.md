@@ -47,10 +47,10 @@ CERBERUS> ;; profit????
 
 ## 4. Encryption profiles
 * The simple ones (DES-CBC-MD5, DES-CBC-MD4 and DES-CBC-CRC) are all implemented and working.
-* Looks like we need the RC4-HMAC profile which Microsoft uses. Without this we can't decrypt the 
-tickets you are most likely to get from Microsoft KDC.
+* I have now successfully decryped an RC4-HMAC enc-part of a ticket that was returned from a Windows KDC.
+* The des3-cbc-sha1-kd looks like it's working. 
 * Will need the stronger AES based profiles at some stage.
-* There is a horrible "derive-key" function which is poorly specified. How do we implement it?
+* The derive-key function appears to be working, I successfully reproduced test values from the rfc.
 
 ## 5. Notes
 * Encryption functions provided by the ironclad package.
