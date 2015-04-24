@@ -254,7 +254,7 @@
 (defun encrypt-rc4 (key data &key export (usage 0))
   ;; translate the usage
   (setf usage (rc4-translate-usage usage))
-
+  (break)
   (let ((l40 (usb8 (babel:string-to-octets "fortybits") '(0 0 0 0 0)))
         (k1 nil)
         (k2 nil)
@@ -336,7 +336,6 @@
 
 (defmethod profile-decrypt-data ((type (eql :rc4-hmac-exp)) octets key &key usage)
   (decrypt-rc4 key octets :usage usage :export t))
-
 
 (defun rc4-string-to-key (password)
   (md4 (babel:string-to-octets password 
@@ -488,8 +487,8 @@ Ki ::= used for the encryption checksum."
 		      octets
 		      ;; padding 
 		      (unless (zerop (mod (length octets) blk-size))
-			(loop :for i :below (- blk-size (mod (length octets) blk-size))
-			   :collect 0)))))
+			(make-list (- blk-size (mod (length octets) blk-size))
+				   :initial-element 0)))))
     (multiple-value-bind (kc ke ki) (simplified-profile-derive-keys type key usage)
       (declare (ignore kc))
       (usb8 (profile-encrypt type ke data)
@@ -510,8 +509,8 @@ Ki ::= used for the encryption checksum."
 ;; ---------------- aes128-cts-hmac-sha1-96 aes256-cts-hmac-sha1-96 -----------------
 
 ;; these don't seem to work. I always get a "invalid checksum" error back from the KDC
-;;(defprofile :aes128-cts-hmac-sha1-96)
-;;(defprofile :aes256-cts-hmac-sha1-96)
+(defprofile :aes128-cts-hmac-sha1-96)
+(defprofile :aes256-cts-hmac-sha1-96)
 
 (defmethod profile-block-size ((type (eql :aes128-cts-hmac-sha1-96))) 16) ;; ??? shouldn't it be 1?
 (defmethod profile-key-seed-length ((type (eql :aes128-cts-hmac-sha1-96))) 16)
@@ -613,9 +612,9 @@ Ki ::= used for the encryption checksum."
   (map '(vector (unsigned-byte 8)) #'identity octets))
 
 (defmethod profile-hmac ((type (eql :aes128-cts-hmac-sha1-96)) key octets)
-  (hmac-sha1 key octets))
+  (subseq (hmac-sha1 key octets) 0 12))
 
-(defmethod profile-hmac-length ((type (eql :aes128-cts-hmac-sha1-96))) 12)
+(defmethod profile-hmac-length ((type (eql :aes128-cts-hmac-sha1-96))) 12) 
       
 ;;(defmethod pseudo-random ((type (eql :des3-cbc-sha1-kd)) key octets &key)
 ;;  (encrypt-des-cbc key (md5 octets)))
@@ -659,7 +658,7 @@ Ki ::= used for the encryption checksum."
   (map '(vector (unsigned-byte 8)) #'identity octets))
 
 (defmethod profile-hmac ((type (eql :aes256-cts-hmac-sha1-96)) key octets)
-  (hmac-sha1 key octets))
+  (subseq (hmac-sha1 key octets) 0 12))
 
 (defmethod profile-hmac-length ((type (eql :aes256-cts-hmac-sha1-96))) 12)
 

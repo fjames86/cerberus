@@ -36,3 +36,14 @@
 			      :usage :pa-tgs-req))))
 
   
+(defun pa-etype-info2 (etype salt &optional iteration-count)
+  (make-pa-data :type :etype-info2
+		:value 
+		(list 
+		 (make-etype-info2-entry :etype etype
+					 :salt salt
+					 :s2kparams (when iteration-count 
+						      (let ((v (nibbles:make-octet-vector 4)))
+							(setf (nibbles:ub32ref/be v 0) iteration-count)
+							v))))))
+  

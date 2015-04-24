@@ -107,11 +107,11 @@
   user
   realm)
 
-(defmethod print-object ((token login-token) stream)
-  (print-unreadable-object (token stream :type t)
-    (format stream ":USER ~S :REALM ~S" 
-            (principal-name-name (login-token-user token))
-            (login-token-realm token))))
+;;(defmethod print-object ((token login-token) stream)
+;;  (print-unreadable-object (token stream :type t)
+;;    (format stream ":USER ~S :REALM ~S" 
+;;            (principal-name-name (login-token-user token))
+;;            (login-token-realm token))))
 
 (defvar *kdc-address* nil 
   "The address of the default KDC.")
@@ -146,7 +146,11 @@ ETYPE ::= encryption profile name to use for pre-authentication.
       ;; we need to decrypt the enc-part of the response to verify it
       ;; FIXME: need to know, e.g. the nonce that we used in the request
       (let ((enc (unpack #'decode-enc-as-rep-part 
-                         (decrypt-data (kdc-rep-enc-part as-rep) key
+                         (decrypt-data (kdc-rep-enc-part as-rep) 
+				       (let ((e (kdc-rep-enc-part as-rep)))
+					 (string-to-key (encrypted-data-type e)
+							password
+							(format nil "~A~A" (string-upcase realm) username)))
 				       :usage :as-rep))))
         ;; should really validate the reponse here, e.g. check nonce etc.
         ;; lets just descrypt it and replace the enc-part with the decrypted enc-part 
@@ -160,41 +164,43 @@ ETYPE ::= encryption profile name to use for pre-authentication.
                         :realm realm))))
 
 ;; this worked. I got a ticket for the principal named
-(defun request-credentials (token server &key till-time)  
+(defun request-credentials (tgt server &key till-time)  
   "Request a ticket for the named principal using the TGS ticket previously requested.
 
 Returns a KDC-REP structure."  
-  (declare (type login-token token)
+  (declare (type login-token tgt)
            (type principal-name server))
-  (let* ((as-rep (login-token-rep token))
-         (ekey (enc-kdc-rep-part-key (kdc-rep-enc-part as-rep))))
-    (let ((rep (send-req-tcp 
-                (pack #'encode-tgs-req 
-                      (make-kdc-request (login-token-user token)
-                                        :type :tgs
-                                        :options '(:renewable :enc-tkt-in-skey)
-                                        :realm (login-token-realm token)
-                                        :server-principal server
-                                        :nonce (random (expt 2 32))
-                                        :till-time (or till-time (time-from-now :weeks 6))
-                                        :encryption-types (list (encryption-key-type ekey))
-                                        :pa-data (list (pa-tgs-req (login-token-tgs token)
-                                                                   (encryption-key-value ekey)
-                                                                   (login-token-user token)
-                                                                   (encryption-key-type ekey)))))
-			   (login-token-address token))))
-    ;; if we got here then the response is a kdc-rep structure (for tgs)
-    ;; we need to decrypt the enc-part of the response to verify it
-    ;; FIXME: need to know, e.g. the nonce that we used in the request
-    (let ((enc (unpack #'decode-enc-as-rep-part 
-                       (decrypt-data (kdc-rep-enc-part rep)
-                                     (encryption-key-value ekey)
-				     :usage :tgs-rep))))
-      ;; should really validate the reponse here, e.g. check nonce etc.
-      ;; lets just descrypt it and replace the enc-part with the decrypted enc-part 
-      (setf (kdc-rep-enc-part rep) enc))
-
-      rep)))
+  (let ((token tgt))
+    (let* ((as-rep (login-token-rep token))
+	   (ekey (enc-kdc-rep-part-key (kdc-rep-enc-part as-rep))))
+      (let ((rep (send-req-tcp 
+		  (pack #'encode-tgs-req 
+			(make-kdc-request 
+			 (login-token-user token)
+			 :type :tgs
+			 :options '(:renewable :enc-tkt-in-skey)
+			 :realm (login-token-realm token)
+			 :server-principal server
+			 :nonce (random (expt 2 32))
+			 :till-time (or till-time (time-from-now :weeks 6))
+			 :encryption-types (list (encryption-key-type ekey))
+			 :pa-data (list (pa-tgs-req (login-token-tgs token)
+						    (encryption-key-value ekey)
+						    (login-token-user token)
+						    (encryption-key-type ekey)))))
+		  (login-token-address token))))
+	;; if we got here then the response is a kdc-rep structure (for tgs)
+	;; we need to decrypt the enc-part of the response to verify it
+	;; FIXME: need to know, e.g. the nonce that we used in the request
+	(let ((enc (unpack #'decode-enc-as-rep-part 
+			   (decrypt-data (kdc-rep-enc-part rep)
+					 (encryption-key-value ekey)
+					 :usage :tgs-rep))))
+	  ;; should really validate the reponse here, e.g. check nonce etc.
+	  ;; lets just descrypt it and replace the enc-part with the decrypted enc-part 
+	  (setf (kdc-rep-enc-part rep) enc))
+	
+	rep))))
 
 ;; next stage: need to package up an AP-REQ to be sent to the application server
 ;; typically this message will be encapsualted in the application protocol, so we don't do any direct 
@@ -273,3 +279,7 @@ Returns a KDC-REP structure."
 								   (string-upcase realm) username)))))
 	  (list-all-profiles)))
 
+
+
+;; the kdc might send an etype-info2 back which contains information we need to use when generating keys
+;; e.g. with the aes-cts type encryption, it might send a s2kparams which indicates what the iteration-count should be 
