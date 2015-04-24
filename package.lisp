@@ -2,6 +2,18 @@
 ;;;; This code is licensed under the MIT license.
 
 (defpackage #:cerberus
-  (:use #:cl))
+  (:use #:cl)
+  (:export #:string-to-key
+	   #:request-tgt
+	   #:request-credentials
+	   #:principal
+	   #:pack-ap-req
+	   #:valid-ticket-p
+	   #:generate-keylist))
+
+
+
+
+
 
 

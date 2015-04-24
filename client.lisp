@@ -116,7 +116,7 @@
 (defvar *kdc-address* nil 
   "The address of the default KDC.")
 
-(defun login (username password realm &key kdc-address till-time (etype :des-cbc-md5))
+(defun request-tgt (username password realm &key kdc-address till-time (etype :des-cbc-md5))
   "Login to the authentication server to reqest a ticket for the Ticket-granting server. Returns a LOGIN-TOKEN
 structure which should be used for requests for further tickets.
 
@@ -146,7 +146,8 @@ ETYPE ::= encryption profile name to use for pre-authentication.
       ;; we need to decrypt the enc-part of the response to verify it
       ;; FIXME: need to know, e.g. the nonce that we used in the request
       (let ((enc (unpack #'decode-enc-as-rep-part 
-                         (decrypt-data (kdc-rep-enc-part as-rep) key))))
+                         (decrypt-data (kdc-rep-enc-part as-rep) key
+				       :usage :as-rep))))
         ;; should really validate the reponse here, e.g. check nonce etc.
         ;; lets just descrypt it and replace the enc-part with the decrypted enc-part 
         (setf (kdc-rep-enc-part as-rep) enc))
@@ -159,7 +160,7 @@ ETYPE ::= encryption profile name to use for pre-authentication.
                         :realm realm))))
 
 ;; this worked. I got a ticket for the principal named
-(defun request-ticket (token server &key till-time)  
+(defun request-credentials (token server &key till-time)  
   "Request a ticket for the named principal using the TGS ticket previously requested.
 
 Returns a KDC-REP structure."  
@@ -187,67 +188,69 @@ Returns a KDC-REP structure."
     ;; FIXME: need to know, e.g. the nonce that we used in the request
     (let ((enc (unpack #'decode-enc-as-rep-part 
                        (decrypt-data (kdc-rep-enc-part rep)
-                                     (encryption-key-value ekey)))))
+                                     (encryption-key-value ekey)
+				     :usage :tgs-rep))))
       ;; should really validate the reponse here, e.g. check nonce etc.
       ;; lets just descrypt it and replace the enc-part with the decrypted enc-part 
       (setf (kdc-rep-enc-part rep) enc))
 
       rep)))
 
-
-
-
-
 ;; next stage: need to package up an AP-REQ to be sent to the application server
 ;; typically this message will be encapsualted in the application protocol, so we don't do any direct 
 ;; networking for this, just return a packed octet buffer
-(defun pack-ap-req (cname etype key ticket &optional mutual)
-  (pack #'encode-ap-req 
-        (make-ap-req :options (when mutual '(:mutual-required))
-                     :ticket ticket
-                     :authenticator 
-                     (encrypt-data etype
-                                   (pack #'encode-authenticator 
-                                         (make-authenticator :crealm (ticket-realm ticket)
-                                                             :cname cname
-                                                             :ctime (get-universal-time)
-                                                             :cusec 0))
-                                   key))))
-
-;; this would be used by the server to examine the authenticator and validate the request
-(defun unpack-ap-req (buffer key)
-  (let ((req (unpack #'decode-ap-req buffer)))
-    ;; the authenticator is an encrypted data, we need to decrypt it first 
-    (setf (ap-req-authenticator req)
-          (decrypt-data (ap-req-authenticator req)
-                        key))
-    req))
-
-
-
-
-
+(defun pack-ap-req (credentials &key mutual)
+  (declare (type kdc-rep credentials))
+  (let ((ticket (kdc-rep-ticket credentials))
+	(cname (kdc-rep-cname credentials))
+	(key (enc-kdc-rep-part-key (kdc-rep-enc-part credentials))))
+    (pack #'encode-ap-req 
+	  (make-ap-req :options (when mutual '(:mutual-required))
+		       :ticket ticket
+		       :authenticator 
+		       (encrypt-data (encryption-key-type key)
+				     (pack #'encode-authenticator 
+					   (make-authenticator :crealm (ticket-realm ticket)
+							       :cname cname
+							       :ctime (get-universal-time)
+							       :cusec 0))
+				     (encryption-key-value key)
+				     :usage :ap-req)))))
 
 ;; --------------- application server -------------------------
 
-(defun decrypt-ticket (key ticket)
+(defun decrypt-ticket-enc-part (keylist ticket)
   "Decrypt the enc-part of the ticket."
   (let ((enc (ticket-enc-part ticket)))
-    (decrypt-data enc key :usage :ticket)))
+    (let ((key (find-if (lambda (k)
+			  (eq (encryption-key-type k) (encrypted-data-type enc)))
+			keylist)))
+      (if key 
+	  (unpack #'decode-enc-ticket-part 
+		  (decrypt-data enc 
+				(encryption-key-value key)
+				:usage :ticket))
+	  (error "No key for encryption type ~S" (encrypted-data-type enc))))))
 
-(defun valid-ticket-p (key ticket enc-auth)
+;; this would be used by the server to examine the authenticator and validate the request
+(defun unpack-ap-req (buffer)
+  (unpack #'decode-ap-req buffer))
+
+(defun valid-ticket-p (keylist ap-req-buffer)
   "Decrypt the ticket and check its contents against the authenticator."
-  (declare (type ticket ticket)
-	   (type encrypted-data enc-auth))
-  ;; start by modifying the enc-part to be decrypted
-  (let ((enc (decrypt-ticket key ticket)))
-    ;; now decrypt the authenticator using the session key we got from the ticket
-    (let ((a (decrypt-data enc-auth (enc-ticket-part-key enc)
-			   :usage :ap-req)))
-      (declare (ignore a))
-      ;; check the contents of the authenticator against the ticket....
-      ;; FIXME: for now we just assume it's ok
-      t)))
+  (let ((ap-req (unpack-ap-req ap-req-buffer)))
+    (let ((ticket (ap-req-ticket ap-req))
+	  (enc-auth (ap-req-authenticator ap-req)))
+      ;; start by decrypting the ticket to get the session key 
+      (let ((enc (decrypt-ticket-enc-part keylist ticket)))
+	(let ((key (enc-ticket-part-key enc)))
+	  ;; now decrypt the authenticator using the session key we got from the ticket
+	  (let ((a (decrypt-data enc-auth (encryption-key-value key)
+				 :usage :ap-req)))
+	    (declare (ignore a))
+	    ;; check the contents of the authenticator against the ticket....
+	    ;; FIXME: for now we just assume it's ok
+	    t))))))
 
 ;; --------------------------------------------------------------
 
@@ -258,3 +261,15 @@ Returns a KDC-REP structure."
 ;;			:usage (key-usage :ticket)))
 ;; where *myticket* is a tgs-rep structure
 ;; 
+
+(defun generate-keylist (password &key username realm salt)
+  "Generate keys for all the registered profiles."
+  (mapcar (lambda (type)
+	    (make-encryption-key :type type
+				 :value (string-to-key type 
+						       password
+						       (or salt
+							   (format nil "~A~A" 
+								   (string-upcase realm) username)))))
+	  (list-all-profiles)))
+

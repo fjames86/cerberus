@@ -16,7 +16,8 @@
 				     (pack #'encode-pa-enc-ts-enc 
 					   (make-pa-enc-ts-enc :patimestamp (get-universal-time)
 							       :pausec 0))
-				     key)))
+				     key
+				     :usage :pa-enc-timestamp)))
 
 (defun pa-tgs-req (ticket key cname &optional (etype :des-cbc-md5))
   (make-pa-data 
@@ -31,6 +32,7 @@
 							:cname cname
 							:ctime (get-universal-time)
 							:cusec 0))
-			      key))))
+			      key
+			      :usage :pa-tgs-req))))
 
   

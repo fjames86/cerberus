@@ -92,11 +92,11 @@
   ((err :initarg :err :initform nil :reader krb-error-err))
   (:report (lambda (condition stream)
 	     (let ((err (krb-error-err condition)))
-	       (format stream "KRB-ERROR ~A: ~A~%~S" 
+	       (format stream "KRB-ERROR ~A: ~A" 
 		       (krb-error-error-code err)
-		       (third (assoc (krb-error-error-code err) *krb-errors*))
-		       (when (krb-error-edata err) 			   
-			 (krb-error-edata err)))))))
+		       (third (assoc (krb-error-error-code err) *krb-errors*)))
+	       (when (krb-error-edata err)
+		 (format stream "~%~S" (krb-error-edata err)))))))
 
 ;; would be nice to map from a krb-error structure and generate a krb-error-t 
 (defun krb-error (err)

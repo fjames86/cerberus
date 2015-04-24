@@ -509,8 +509,9 @@ Ki ::= used for the encryption checksum."
 
 ;; ---------------- aes128-cts-hmac-sha1-96 aes256-cts-hmac-sha1-96 -----------------
 
-(defprofile :aes128-cts-hmac-sha1-96)
-(defprofile :aes256-cts-hmac-sha1-96)
+;; these don't seem to work. I always get a "invalid checksum" error back from the KDC
+;;(defprofile :aes128-cts-hmac-sha1-96)
+;;(defprofile :aes256-cts-hmac-sha1-96)
 
 (defmethod profile-block-size ((type (eql :aes128-cts-hmac-sha1-96))) 16) ;; ??? shouldn't it be 1?
 (defmethod profile-key-seed-length ((type (eql :aes128-cts-hmac-sha1-96))) 16)
