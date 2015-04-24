@@ -1,5 +1,5 @@
 # cerberus
-A Kerberos implementation.
+A Kerberos (version 5) implementation.
 
 This is an implementation of the Kerberos v5 authentication protocol in Common Lisp.
 
@@ -38,25 +38,36 @@ entail some form of LDAP access, which is a massive task in itself. This can wai
 The public API is not finalized yet, but at the moment you can do something like:
 
 ```
-;; login to the authenticaiton server and get a TGT
-CERBERUS> (defparameter *token* (login "username" "password" "realm" :kdc-address "10.1.0.1"))
-;; request a ticket to the application server using the TGT
-CERBERUS> (defparameter *ticket* (request-ticket *token* (principal "service" :instance "hostname" :type :srv-inst)))
-CERBERUS> ;; profit????
+;; login to the AS and request a TGT
+CL-USER> (defparameter *tgt* (cerberus:request-tgt "Administrator" "password" "REALM" :kdc-address "10.1.1.1"))
+*TGT*
+;; request credentials to talk to the user "Administrator"
+CL-USER> (defparameter *creds* (cerberus:request-credentials *tgt* (cerberus:principal "Administrator")))
+*CREDS*
+;; pack an AP-REQ structure to be sent to the application server
+CL-USER> (defparameter *buffer* (cerberus:pack-ap-req *creds*))
+*BUFFER*
+;; send the *BUFFER* to the application server using whatever protocol you need
+
+;; the application server must first generate a list of keys for the various encryption profiles
+CL-USER> (defparameter *keylist* (cerberus:generate-keylist "password" :username "Administrator" :realm "REALM"))
+*KEYLIST*
+;; the application server receives the packed AP-REQ and validates it 
+CL-USER> (cerberus:valid-ticket-p *keylist* (cerberus:pack-ap-req *creds*))
+T
+
 ```
 
 ## 4. Encryption profiles
 * The simple ones (DES-CBC-MD5, DES-CBC-MD4 and DES-CBC-CRC) are all implemented and working.
 * I have now successfully decryped an RC4-HMAC enc-part of a ticket that was returned from a Windows KDC.
 * The des3-cbc-sha1-kd looks like it's working. 
-* Will need the stronger AES based profiles at some stage.
-* The derive-key function appears to be working, I successfully reproduced test values from the rfc.
+* I have the two AES profiles typed in, but they don't seem to work with the KDC. I always get a "invalid checksum" error back from the KDC.
 
 ## 5. Notes
 * Encryption functions provided by the ironclad package.
 * The ASN.1 serializer is specific to this project and NOT a generalized Lisp ASN.1 serializer. Perhaps it could form
 the basis of one in the future.
-* Some of the algorithms specified in the RFCs are vague and poorly defined. 
 
 ## 6. License
 Licensed under the terms of the MIT license.
