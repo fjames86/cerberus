@@ -5,11 +5,11 @@ This is an implementation of the Kerberos v5 authentication protocol in Common L
 
 ## 1. Introduction
 Kerberos is the de facto standard method of authentication over a network, notably in Microsoft Windows envrionments.
-If you want to write robust and secure networked services, you need a robust and secure authentication system: Kerberos 
+If you want to write robust and secure networked services, you need a robust and secure authentication system: Kerberos is
 most likely the thing you need.
 
 The basic principal of Kerberos is there is a trusted central authority which stores credentials (essentially passwords)
-for each principal (user account). A client can prove its identity to a server by requesting a message from the KDC 
+for each principal (user account). This is knowns as the Key Distribution Centre (KDC). A client can prove its identity to a server by requesting a message from the KDC 
 which is encrypted with the server's private key. Only the server (and the KDC) have the knowledge to decrypt this message.
 The client forwards this message to the server, who decrypts it and examines the contents of the message. Inside it will be 
 some proof (e.g. a recent timestamp) that the client is who they say they are. 
@@ -60,9 +60,10 @@ T
 
 ## 4. Encryption profiles
 * The simple ones (DES-CBC-MD5, DES-CBC-MD4 and DES-CBC-CRC) are all implemented and working.
-* I have now successfully decryped an RC4-HMAC enc-part of a ticket that was returned from a Windows KDC.
-* The des3-cbc-sha1-kd looks like it's working. 
-* I have the two AES profiles typed in, but they don't seem to work with the KDC. I always get a "invalid checksum" error back from the KDC.
+* I have now successfully decryped an RC4-HMAC enc-part of a ticket that was returned from a Windows KDC. I am having trouble with the RC4-HMAC-EXP profile though.
+* The DES3-CBC-SHA1-KD is implemented, looks like it's working. 
+* I have the two AES profiles typed in, but they don't seem to work with the KDC. I keep getting various errors back from the KDC.
+
 
 ## 5. Notes
 * Encryption functions provided by the ironclad package.
