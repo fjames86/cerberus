@@ -254,7 +254,7 @@
 (defun encrypt-rc4 (key data &key export (usage 0))
   ;; translate the usage
   (setf usage (rc4-translate-usage usage))
-  (break)
+
   (let ((l40 (usb8 (babel:string-to-octets "fortybits") '(0 0 0 0 0)))
         (k1 nil)
         (k2 nil)
