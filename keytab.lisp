@@ -1,7 +1,12 @@
 ;;;; Copyright (c) Frank James 2015 <frank.a.james@gmail.com>
 ;;;; This code is licensed under the MIT license.
 
+;;; This file contains codes to read MIT keytab files, the standard file format 
+;;; for storing keys.
+
 (in-package #:cerberus)
+
+;; All the integers are in network-byte order (i.e. big-endian)
 
 ;; http://www.gnu.org/software/shishi/manual/html_node/The-Keytab-Binary-File-Format.html
 ;; keytab {
@@ -37,6 +42,9 @@
       (read-sequence v stream)
       v)))
 
+;; these are copied from the asn.1 equivalents... 
+;; probably should do this better (i.e. put the enum lists in once place)
+;; but I can't be bothered. 
 (defun read-etype-enum (stream)
   (let ((n (nibbles:read-sb16/be stream)))
     (case n
@@ -68,11 +76,10 @@
       (otherwise n))))
 
 (defstruct keytab-entry 
-  etype
-  key
-  principal
-  realm
-  timestamp)
+  key ;; encryption-key structure
+  principal ;; principal-name structure
+  realm ;; string, naming the realm
+  timestamp) ;; encoded universal time
 
 
 (defun read-keytab-entry (stream)
@@ -102,16 +109,15 @@
       ;; ignore the vno8
       (read-byte stream)
       ;; the key 
-      (setf (keytab-entry-etype entry)
-	    (read-etype-enum stream)
-	    (keytab-entry-key entry)
-	    (read-counted-string stream))
+      (setf (keytab-entry-key entry)
+	    (make-encryption-key :type (read-etype-enum stream)
+				 :value (read-counted-string stream)))
       ;; advance the file position
       (file-position stream (+ pos size))
       entry)))
 
 (defun load-keytab (pathspec)
-  "Load the keytab file named by pathspec."
+  "Load the keytab file named by pathspec. Returns a list of keytab-entry structures."
   (with-open-file (f pathspec :direction :input :element-type '(unsigned-byte 8))
     ;; read the version
     (nibbles:read-ub16/be f)

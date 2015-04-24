@@ -1,7 +1,7 @@
 # cerberus
 A Kerberos (version 5) implementation.
 
-This is an implementation of the Kerberos v5 authentication protocol in Common Lisp.
+This is an implementation of the Kerberos v5 authentication protocol, entirely in Common Lisp. 
 
 ## 1. Introduction
 Kerberos is the de facto standard method of authentication over a network, notably in Microsoft Windows envrionments.
@@ -9,7 +9,8 @@ If you want to write robust and secure networked services, you need a robust and
 most likely the thing you need.
 
 The basic principal of Kerberos is there is a trusted central authority which stores credentials (essentially passwords)
-for each principal (user account). This is knowns as the Key Distribution Centre (KDC). A client can prove its identity to a server by requesting a message from the KDC 
+for each principal (user account). This is knowns as the Key Distribution Centre (KDC). 
+A client can prove its identity to a server by requesting a message from the KDC 
 which is encrypted with the server's private key. Only the server (and the KDC) have the knowledge to decrypt this message.
 The client forwards this message to the server, who decrypts it and examines the contents of the message. Inside it will be 
 some proof (e.g. a recent timestamp) that the client is who they say they are. 
@@ -60,17 +61,24 @@ T
 
 ## 4. Encryption profiles
 * The simple ones (DES-CBC-MD5, DES-CBC-MD4 and DES-CBC-CRC) are all implemented and working.
-* I have now successfully decryped an RC4-HMAC enc-part of a ticket that was returned from a Windows KDC. I am having trouble with the RC4-HMAC-EXP profile though.
+* I have now successfully decryped an RC4-HMAC enc-part of a ticket that was returned from a Windows KDC. 
+The RC4-HMAC-EXP is proving somewhat more problematic.
 * The DES3-CBC-SHA1-KD is implemented, looks like it's working. 
 * I have the two AES profiles typed in, but they don't seem to work with the KDC. I keep getting various errors back from the KDC.
 
+## 5. Keytab files
+You can load keytab files (as output from other Kerberos implementations, such from ktpass utility) using 
+```
+CL-USER> (cerberus:load-keytab "my.keytab")
+```
 
-## 5. Notes
+## 6. Notes
 * Encryption functions provided by the ironclad package.
 * The ASN.1 serializer is specific to this project and NOT a generalized Lisp ASN.1 serializer. Perhaps it could form
 the basis of one in the future.
+* This was developed against the Windows KDC (i.e. active directory). It should work with other KDCs such as MIT and Heimdal, but I've not tried.
 
-## 6. License
+## 7. License
 Licensed under the terms of the MIT license.
 
 Frank James 
