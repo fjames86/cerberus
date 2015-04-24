@@ -33,7 +33,7 @@
 (defgeneric profile-decrypt-data (type octets key &key))
 
 ;; key generation routines
-(defgeneric string-to-key (type password salt))
+(defgeneric string-to-key (type password salt &key))
 (defgeneric random-to-key (type octets &key))
 (defgeneric pseudo-random (type key octets &key))
 
@@ -41,11 +41,37 @@
 (defgeneric profile-hmac (type key octets))
 (defgeneric profile-hmac-length (type))
 
+
+;; --------------------------------------------------------
+
+
+(defun key-usage (name)
+  "Convert a symbol naming a usage scenario into a usage number"
+  (ecase name 
+    (:pa-enc-timestamp 1) ;; pa-enc-timestamp 
+    (:ticket 2) ;; enc-part of a ticket
+    (:as-rep 3) ;; enc-part of a as-rep message
+    (:tgs-session 4) ;; as above but when the session key is used
+    (:tgs-sub-session 5) ;; subsession key used when encrypting the enc-auth-data part of a tgs-req
+    (:authenticator-tgs-req 6) ;; in a pa-tgs-req ap-data field
+    (:pa-tgs-req 7) ;; enctypred authenticator in a pa-tgs-req 
+    (:tgs-rep 8) ;; enc-part of a tgs-rep if using session key 
+    (:tgs-rep-subkey 9) ;; enc-part of tgs-rep if using authenticator subkey
+    (:authenticator-cksum 10) ;; in normal messages
+    (:ap-req 11) ;; encrypted authenticator in an ap-req 
+    (:ap-rep 12) ;; enc-part of a enc-ap-rep-part 
+    (:krb-priv 13) ;; enc-part of a krb-priv message
+    (:krb-cred 14) ;; enc-part of a krb-cred message
+    (:krb-safe 15) ;; checksum of a krb-safe message
+    (:kdc-issued 19) ;; kdc-issued message checksum
+    ))
+
 ;; encrypt a message and return a kerberos EncryptedData structure
 (defun encrypt-data (type octets key &key usage)
   "Encrypt the octets using the key with cipher type. Returns an ENCRYPTED-DATA structure."
   (make-encrypted-data :type type
-		       :cipher (profile-encrypt-data type octets key :usage usage)))
+		       :cipher (profile-encrypt-data type octets key 
+						     :usage (key-usage usage))))
 
 (defun decrypt-data (ed key &key usage)
   "Takes an ENCRYPTED-DATA structure and returns the decrypted result."
@@ -53,7 +79,7 @@
   (profile-decrypt-data (encrypted-data-type ed)
 			(encrypted-data-cipher ed)
 			key
-			:usage usage))
+			:usage (key-usage usage)))
 
 ;; ------------ des-cbc-md5 ------------
 
@@ -80,7 +106,7 @@
 		 (decrypt-des-cbc key data :initialization-vector initialization-vector))
 	       #'md5))
 
-(defmethod string-to-key ((type (eql :des-cbc-md5)) password salt)
+(defmethod string-to-key ((type (eql :des-cbc-md5)) password salt &key)
   (des-string-to-key password (or salt "")))
 
 (defmethod random-to-key ((type (eql :des-cbc-md5)) octets &key)
@@ -114,7 +140,7 @@
 		 (decrypt-des-cbc key data :initialization-vector initialization-vector))
 	       #'md4))
 
-(defmethod string-to-key ((type (eql :des-cbc-md4)) password salt)
+(defmethod string-to-key ((type (eql :des-cbc-md4)) password salt &key)
   (des-string-to-key password (or salt "")))
 
 (defmethod random-to-key ((type (eql :des-cbc-md4)) octets &key)
@@ -155,7 +181,7 @@
 	       #'crc32
 	       :cksum-len 4))
 
-(defmethod string-to-key ((type (eql :des-cbc-crc)) password salt)
+(defmethod string-to-key ((type (eql :des-cbc-crc)) password salt &key)
   (des-string-to-key password (or salt "")))
 
 (defmethod random-to-key ((type (eql :des-cbc-crc)) octets &key)
@@ -296,7 +322,7 @@
 
 	  ;; validate the checksum 
 	  (unless (equalp (hmac-md5 result k2) cksum)
-	    (error "checksums don't match"))))
+	    (error 'checksum-error))))
       plaintext)))
       
 (defmethod profile-encrypt-data ((type (eql :rc4-hmac)) octets key &key usage)
@@ -317,10 +343,10 @@
 			       :encoding :ucs-2
 			       :use-bom nil)))
 
-(defmethod string-to-key ((type (eql :rc4-hmac)) password salt)
+(defmethod string-to-key ((type (eql :rc4-hmac)) password salt &key)
   (rc4-string-to-key password))
 
-(defmethod string-to-key ((type (eql :rc4-hmac-exp)) password salt)
+(defmethod string-to-key ((type (eql :rc4-hmac-exp)) password salt &key)
   (rc4-string-to-key password))
 
 ;; what is this for the rc4 system? maybe we don't need it 
@@ -394,7 +420,7 @@
 		  tmpkey 
 		  (babel:string-to-octets "kerberos")))))
 
-(defmethod string-to-key ((type (eql :des3-cbc-sha1-kd)) password salt)
+(defmethod string-to-key ((type (eql :des3-cbc-sha1-kd)) password salt &key)
   (des3-string-to-key password salt))
 
 (defmethod random-to-key ((type (eql :des3-cbc-sha1-kd)) octets &key)
@@ -440,7 +466,7 @@
 				     (setf (nibbles:sb32ref/be v 0) constant)
 				     v))
 			  (vector constant)))))
-    (format t "dr: ~X~%" rand)
+;;    (format t "dr: ~X~%" rand)
     (random-to-key type rand)))
 
 ;; this works with the des3-cbc-sha1-kd profile!
@@ -477,30 +503,164 @@ Ki ::= used for the encryption checksum."
       (declare (ignore kc))
       (let ((plaintext (profile-decrypt type ke ciphertext)))
 	(unless (equalp hmac (profile-hmac type ki plaintext))
-	  (error "checksums don't match"))
+	  (error 'checksum-error))
 	;; drop the random confounder
 	(subseq plaintext (profile-block-size type))))))
 
+;; ---------------- aes128-cts-hmac-sha1-96 aes256-cts-hmac-sha1-96 -----------------
 
-(defun key-usage (name)
-  "Convert a symbol naming a usage scenario into a usage number"
-  (ecase name 
-    (:pa-enc-timestamp 1) ;; pa-enc-timestamp 
-    (:ticket 2) ;; enc-part of a ticket
-    (:as-rep 3) ;; enc-part of a as-rep message
-    (:tgs-session 4) ;; as above but when the session key is used
-    (:tgs-sub-session 5) ;; subsession key used when encrypting the enc-auth-data part of a tgs-req
-    (:authenticator-tgs-req 6) ;; in a pa-tgs-req ap-data field
-    (:pa-tgs-req 7) ;; enctypred authenticator in a pa-tgs-req 
-    (:tgs-rep 8) ;; enc-part of a tgs-rep if using session key 
-    (:tgs-rep-subkey 9) ;; enc-part of tgs-rep if using authenticator subkey
-    (:authenticator-cksum 10) ;; in normal messages
-    (:ap-req 11) ;; encrypted authenticator in an ap-req 
-    (:ap-rep 12) ;; enc-part of a enc-ap-rep-part 
-    (:krb-priv 13) ;; enc-part of a krb-priv message
-    (:krb-cred 14) ;; enc-part of a krb-cred message
-    (:krb-safe 15) ;; checksum of a krb-safe message
-    (:kdc-issued 19) ;; kdc-issued message checksum
-    ))
-  
-    
+(defprofile :aes128-cts-hmac-sha1-96)
+(defprofile :aes256-cts-hmac-sha1-96)
+
+(defmethod profile-block-size ((type (eql :aes128-cts-hmac-sha1-96))) 16) ;; ??? shouldn't it be 1?
+(defmethod profile-key-seed-length ((type (eql :aes128-cts-hmac-sha1-96))) 16)
+(defmethod profile-check-sum-size ((type (eql :aes128-cts-hmac-sha1-96))) 12) 
+
+;; we need cipher-text stealing cbc mode encryption rather than standard cbc mode
+;; This works
+(defmethod profile-encrypt ((type (eql :aes128-cts-hmac-sha1-96)) key octets)
+  (let* ((cipher (ironclad:make-cipher :aes
+				       :mode :cbc
+				       :key key
+				       :initialization-vector (nibbles:make-octet-vector 16)))
+	 (len (length octets))
+	 (result (nibbles:make-octet-vector (+ len
+					       (if (zerop (mod len 16))
+						   0
+						   (- 16 (mod len 16)))))))
+
+    ;; when the plaintext is a single block just encrypt and return as normal
+    (when (<= len 16)
+      (when (< len 16)
+	(setf octets (usb8 octets (make-list (- 16 (mod len 16)) :initial-element 0))))
+      (ironclad:encrypt cipher octets result)
+      (return-from profile-encrypt result))
+
+    ;; if the last block is too small, pad with zeros
+    (unless (zerop (mod len 16))
+      (setf octets (usb8 octets (make-list (- 16 (mod len 16)) :initial-element 0))))
+
+    (ironclad:encrypt cipher octets result)
+    ;; swap last two blocks
+    (let ((base (- (length octets) 32)))
+      (dotimes (i 16)
+	(rotatef (aref result (+ base i)) (aref result (+ base 16 i)))))
+    (subseq result 0 len)))
+
+;; this works
+(defmethod profile-decrypt ((type (eql :aes128-cts-hmac-sha1-96)) key octets)
+  (let* ((cipher (ironclad:make-cipher :aes
+				       :mode :cbc
+				       :key key
+				       :initialization-vector (nibbles:make-octet-vector 16)))
+	 (len (length octets))
+	 (extra (mod len 16))
+	 (result (nibbles:make-octet-vector len))
+	 (cn-1 (subseq octets (- len 16 (if (zerop extra) 16 extra)) 16))
+	 (cn (subseq octets (- len (if (zerop extra) 16 extra)))))
+
+    ;; if the ciphertext is 1 block then just decrtypt it and return
+    (when (<= len 16)
+      (ironclad:decrypt cipher octets result)
+      (return-from profile-decrypt result))
+
+    ;; start by decrypting up to the last 2 blocks
+    (ironclad:decrypt cipher octets result :ciphertext-end (- len 16 (if (zerop extra) 16 extra)))
+
+    ;; we now need to decrypt the penultimate block, but using an empty IV
+    (unless (zerop extra)
+      (setf cn
+	    (usb8 cn
+		  (subseq (let ((c (ironclad:make-cipher :aes
+							 :mode :cbc
+							 :key key
+							 :initialization-vector (nibbles:make-octet-vector 16)))
+				(r (nibbles:make-octet-vector 16)))
+			    (ironclad:decrypt c cn-1 r)
+			    r)
+			  extra))))
+    ;; decrypt in swapped order
+    (ironclad:decrypt cipher cn result :plaintext-start (- len 16 (if (zerop extra) 16 extra)))
+    (let ((r (nibbles:make-octet-vector 16)))
+      (ironclad:decrypt cipher cn-1 r)
+      (dotimes (i extra)
+	(setf (aref result (+ (- len extra) i)) (aref r i))))
+    result))
+
+(defmethod profile-encrypt-data ((type (eql :aes128-cts-hmac-sha1-96)) octets key &key usage)
+  (simplified-profile-encrypt :aes128-cts-hmac-sha1-96 
+			      key 
+			      octets
+			      usage))
+
+(defmethod profile-decrypt-data ((type (eql :aes128-cts-hmac-sha1-96)) octets key &key usage)
+  (simplified-profile-decrypt :aes128-cts-hmac-sha1-96
+			      key
+			      octets
+			      usage))
+
+;; this works
+(defmethod string-to-key ((type (eql :aes128-cts-hmac-sha1-96)) password salt &key iteration-count)
+  (derive-key :aes128-cts-hmac-sha1-96
+	      (pbkdf2 password salt
+		      :key-length (profile-key-seed-length type)
+		      :iteration-count (or iteration-count 4096))
+	      (babel:string-to-octets "kerberos")))
+
+(defmethod random-to-key ((type (eql :aes128-cts-hmac-sha1-96)) octets &key)
+  ;; just copy the octets
+  (map '(vector (unsigned-byte 8)) #'identity octets))
+
+(defmethod profile-hmac ((type (eql :aes128-cts-hmac-sha1-96)) key octets)
+  (hmac-sha1 key octets))
+
+(defmethod profile-hmac-length ((type (eql :aes128-cts-hmac-sha1-96))) 12)
+      
+;;(defmethod pseudo-random ((type (eql :des3-cbc-sha1-kd)) key octets &key)
+;;  (encrypt-des-cbc key (md5 octets)))
+
+
+
+
+
+(defmethod profile-block-size ((type (eql :aes256-cts-hmac-sha1-96))) 16) ;; ??? shouldn't it be 1?
+(defmethod profile-key-seed-length ((type (eql :aes256-cts-hmac-sha1-96))) 32)
+(defmethod profile-check-sum-size ((type (eql :aes256-cts-hmac-sha1-96))) 12) 
+
+(defmethod profile-encrypt ((type (eql :aes256-cts-hmac-sha1-96)) key octets)
+  (profile-encrypt :aes128-cts-hmac-sha1-96 key octets))
+
+;; this works
+(defmethod profile-decrypt ((type (eql :aes256-cts-hmac-sha1-96)) key octets)
+  (profile-decrypt :aes128-cts-hmac-sha1-96 key octets))
+
+(defmethod profile-encrypt-data ((type (eql :aes256-cts-hmac-sha1-96)) octets key &key usage)
+  (simplified-profile-encrypt type
+			      key 
+			      octets
+			      usage))
+
+(defmethod profile-decrypt-data ((type (eql :aes256-cts-hmac-sha1-96)) octets key &key usage)
+  (simplified-profile-decrypt type
+			      key
+			      octets
+			      usage))
+
+(defmethod string-to-key ((type (eql :aes256-cts-hmac-sha1-96)) password salt &key iteration-count)
+  (derive-key type
+	      (pbkdf2 password salt
+		      :key-length (profile-key-seed-length type)
+		      :iteration-count (or iteration-count 4096))
+	      (babel:string-to-octets "kerberos")))
+
+(defmethod random-to-key ((type (eql :aes256-cts-hmac-sha1-96)) octets &key)
+  ;; just copy the octets
+  (map '(vector (unsigned-byte 8)) #'identity octets))
+
+(defmethod profile-hmac ((type (eql :aes256-cts-hmac-sha1-96)) key octets)
+  (hmac-sha1 key octets))
+
+(defmethod profile-hmac-length ((type (eql :aes256-cts-hmac-sha1-96))) 12)
+
+
+

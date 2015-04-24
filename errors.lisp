@@ -102,3 +102,11 @@
 (defun krb-error (err)
   (declare (type krb-error err))
   (error 'krb-error-t :err err))
+
+
+(define-condition checksum-error (error)
+  ()
+  (:report (lambda (c stream)
+	     (declare (ignore c))
+	     (format stream "CHECKSUM-ERROR: Invalid checksum"))))
+

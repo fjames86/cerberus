@@ -22,6 +22,11 @@
 (defun sha1 (octets)
   (ironclad:digest-sequence (ironclad:make-digest :sha1) octets))
 
+(defun hmac-sha1 (key octets)
+  (let ((h (ironclad:make-hmac key :sha1)))
+    (ironclad:update-hmac h octets)
+    (ironclad:hmac-digest h)))
+
 (defun encrypt-aes (key octets &key initialization-vector)
   (let ((c (ironclad:make-cipher :aes 
 				 :key key 
@@ -168,7 +173,7 @@
 ;; --------------
 
 ;; This is copied/ported from the C codes found here 
-;; http://opensource.apple.com/source/Kerberos/Kerberos-62/KerberosFramework/Kerberos5/Sources/lib/crypto/nfold.c
+;; http://opensource.apple.com/source/Kerberos/Kerberos-62/KerberosFramework/Kerberos5/Sources/lib/crypto/nfold.c 
 ;; this works
 (defun n-fold (octets n)
   "The horrific n-fold function as specifed in the rfc. n is a number of bits"
@@ -392,7 +397,7 @@
 	    (aref buffer (+ 8 i)) 0))
     (let ((ck (funcall cksum-fn buffer)))
       (unless (every #'= ck cksum)
-	(error "checksums don't match")))
+	(error 'checksum-error)))
     (subseq buffer (+ 8 cksum-len))))
 
 ;;----------------------- ------------------
