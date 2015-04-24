@@ -9,7 +9,8 @@
 	   #:principal
 	   #:pack-ap-req
 	   #:valid-ticket-p
-	   #:generate-keylist))
+	   #:generate-keylist
+	   #:load-keytab))
 
 
 
