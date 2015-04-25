@@ -556,7 +556,8 @@ Ki ::= used for the encryption checksum."
 	 (len (length octets))
 	 (extra (mod len 16))
 	 (result (nibbles:make-octet-vector len))
-	 (cn-1 (subseq octets (- len 16 (if (zerop extra) 16 extra)) 16))
+	 (cn-1 (subseq octets (- len 16 (if (zerop extra) 16 extra)) 
+		       (- len (if (zerop extra) 16 extra))))
 	 (cn (subseq octets (- len (if (zerop extra) 16 extra)))))
 
     ;; if the ciphertext is 1 block then just decrtypt it and return
@@ -581,10 +582,11 @@ Ki ::= used for the encryption checksum."
 			  extra))))
     ;; decrypt in swapped order
     (ironclad:decrypt cipher cn result :plaintext-start (- len 16 (if (zerop extra) 16 extra)))
-    (let ((r (nibbles:make-octet-vector 16)))
+    (let ((r (nibbles:make-octet-vector 16))
+	  (e (if (zerop extra) 16 extra)))
       (ironclad:decrypt cipher cn-1 r)
-      (dotimes (i extra)
-	(setf (aref result (+ (- len extra) i)) (aref r i))))
+      (dotimes (i e)
+	(setf (aref result (+ (- len e) i)) (aref r i))))
     result))
 
 (defmethod profile-encrypt-data ((type (eql :aes128-cts-hmac-sha1-96)) octets key &key usage)
