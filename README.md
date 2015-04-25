@@ -60,11 +60,13 @@ T
 ```
 
 ## 4. Encryption profiles
-* The simple ones (DES-CBC-MD5, DES-CBC-MD4 and DES-CBC-CRC) are all implemented and working.
-* I have now successfully decryped an RC4-HMAC enc-part of a ticket that was returned from a Windows KDC. 
-The RC4-HMAC-EXP is proving somewhat more problematic.
+Cerberus supports a set of encryption "profiles", which are implemented by specializing a set of generic functions.
+Currently, it has support for the following: DES-CBC-MD5, DES-CBC-MD4, DES-CBC-CRC, DES3-CBC-SHA1-KD, RC4-HMAC, RC4-HMAC-EXP, AES128-CTS-HMAC-SHA1-KD, AES256-CTS-HMAC-SHA1-KD. 
+
+* The simple DES-based profiles are all implemented and appear to be working, DES-CBC-MD5, DES-CBC-MD4 and DES-CBC-CRC.
+* The Microsoft profiles, RC4-HMAC and RC4-HMAC-EXP appear to be working correctly. 
 * The DES3-CBC-SHA1-KD is implemented, looks like it's working. 
-* I have the two AES profiles typed in, but they don't seem to work with the KDC. I keep getting various errors back from the KDC.
+* The AES128 and AES256 profiles are working correctly.
 
 ## 5. Keytab files
 You can load keytab files (as output from other Kerberos implementations, such from ktpass utility) using 
@@ -76,7 +78,8 @@ CL-USER> (cerberus:load-keytab "my.keytab")
 * Encryption functions provided by the ironclad package.
 * The ASN.1 serializer is specific to this project and NOT a generalized Lisp ASN.1 serializer. Perhaps it could form
 the basis of one in the future.
-* This was developed against the Windows KDC (i.e. active directory). It should work with other KDCs such as MIT and Heimdal, but I've not tried.
+* This was developed and tested against the Windows KDC (i.e. active directory). It should work with other KDCs such as MIT and Heimdal, but I've not tried.
+* Need to understand the MS-PAC structures, these contain authorization data that is likely to be very useful. 
 
 ## 7. License
 Licensed under the terms of the MIT license.

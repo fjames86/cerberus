@@ -183,7 +183,7 @@ Returns a KDC-REP structure."
 			 :server-principal server
 			 :nonce (random (expt 2 32))
 			 :till-time (or till-time (time-from-now :weeks 6))
-			 :encryption-types (list (encryption-key-type ekey))
+			 :encryption-types (list-all-profiles) ;;(list (encryption-key-type ekey))
 			 :pa-data (list (pa-tgs-req (login-token-tgs token)
 						    (encryption-key-value ekey)
 						    (login-token-user token)
@@ -249,14 +249,20 @@ Returns a KDC-REP structure."
 	  (enc-auth (ap-req-authenticator ap-req)))
       ;; start by decrypting the ticket to get the session key 
       (let ((enc (decrypt-ticket-enc-part keylist ticket)))
+	(setf (ticket-enc-part ticket) enc)
+
 	(let ((key (enc-ticket-part-key enc)))
 	  ;; now decrypt the authenticator using the session key we got from the ticket
 	  (let ((a (decrypt-data enc-auth (encryption-key-value key)
 				 :usage :ap-req)))
-	    (declare (ignore a))
 	    ;; check the contents of the authenticator against the ticket....
 	    ;; FIXME: for now we just assume it's ok
-	    t))))))
+
+	    ;; fixup the ap-req and return that
+	    (setf (ap-req-ticket ap-req) ticket
+		  (ap-req-authenticator ap-req) (unpack #'decode-authenticator a))
+
+	    ap-req))))))
 
 ;; --------------------------------------------------------------
 
