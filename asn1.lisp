@@ -106,8 +106,6 @@
 
 ;; ------------------------------------------------------
 
-(defvar *kerberos-oid* "1.2.840.48018.1.2.2")
-
 (defun encode-identifier (stream tag &key (class :universal) (primitive t))
   (declare (type (integer 0 30) tag))
   (write-byte (logior tag
@@ -392,6 +390,42 @@
    (let ((octets (babel:string-to-octets (time-string time))))
      (encode-length stream (length octets))
      (write-sequence octets stream))))
+
+;; ---------------------------
+
+;; object identifiers, these are sometimes needed as headers for other messages
+;; when encapsulated in other protocols (e.g. gss???)
+
+
+(defparameter *ms-kerberos-oid* #(1 2 840 48018 1 2 2))
+(defparameter *kerberos-oid* #(1 2 840 113554 1 2 2))
+
+;; https://msdn.microsoft.com/en-us/library/bb540809(v=vs.85).aspx
+(defun encode-oid (stream octets)
+  (encode-identifier stream 6)
+  (let ((bytes 
+	 (flexi-streams:with-output-to-sequence (s)
+	   (let ((b1 (aref octets 0))
+		 (b2 (aref octets 1)))
+	     (write-byte (logior (* b1 40) b2) s)
+	     (dotimes (i (- (length octets) 2))
+	       (let ((b (aref octets (+ i 2))))
+		 (cond
+		   ((<= b 127)
+		    (write-byte b s))
+		   (t 
+		    ;; if > 127, then we write multiple 7-bit bytes, 1st byte or'd with #x80
+		    (do ((bytes nil)
+			 (i b (ash i -7)))
+			((zerop i)
+			 (write-byte (logior (car bytes) #x80) s)
+			 (dolist (b (cdr bytes))
+			   (write-byte b s)))
+		      (push (logand i #x7f) bytes))))))))))
+    (encode-length stream (length bytes))
+    (write-sequence bytes stream)))
+
+
 
 ;; ----------------------------
 
