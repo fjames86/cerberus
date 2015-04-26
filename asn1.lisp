@@ -425,8 +425,23 @@
     (encode-length stream (length bytes))
     (write-sequence bytes stream)))
 
-
-
+;; how to decode multiple bytes????
+;; (defun decode-oid (stream)
+;;   (decode-identifier stream)
+;;   (let ((length (decode-length stream)))
+;;     (let ((bytes (nibbles:make-octet-vector length)))
+;;       (read-sequence bytes stream)
+;;       (do ((oid (list (truncate (aref bytes 0) 40) (mod (aref bytes 1) 40)))
+;; 	   (i 2 (1+ i)))
+;; 	  ((= i length) oid)
+;; 	(let ((b (aref bytes i)))
+;; 	  (cond
+;; 	    ((<= b 127)
+;; 	     (setf oid (append oid (list b))))
+;; 	    (t 
+;; 	     ;; if > 127 then multiple 7-bit bytes, 1st byte or'd with #x80
+;; 	     (
+	
 ;; ----------------------------
 
 (defun encode-sequence-of (stream type values &key (tag 16) (class :universal) (primitive nil))
@@ -1279,4 +1294,33 @@
   (count asn1-integer :tag 0)
   (elements authorization-data :tag 1))
 
+
+;; ------------------------------------------------
+;; GSS-related structures
+
+;; gss requires us to wrap things with an OID
+(defun encode-initial-context-token (stream message)
+  (declare (type stream stream)
+	   (type (or ap-req ap-rep krb-error) message))
+  (let ((octets (flexi-streams:with-output-to-sequence (s)
+		  (encode-oid s *kerberos-oid*)
+		  (etypecase message
+		    (ap-req 
+		     (write-sequence #(01 00) s) ;; TOK_ID field
+		     (encode-ap-req s message))
+		    (ap-rep 
+		     (write-sequence #(02 00) s) 
+		     (encode-ap-rep s message))
+		    (krb-error 
+		     (write-sequence #(03 00) s) 
+		     (encode-krb-error s message))))))
+    (let ((bytes (flexi-streams:with-output-to-sequence (s)
+		   (encode-identifier s 0 :primitive nil)
+		   (encode-length s (length octets))
+		   (write-sequence octets s))))
+      (encode-identifier stream 0 :class :application :primitive nil)
+      (encode-length stream (length bytes))
+      (write-sequence bytes stream))))
+
+;; need a decode-initial-context-token as well
 

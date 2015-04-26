@@ -31,7 +31,7 @@ the ticket-granting service (TGS).
 * Clients need to be able to use their TGT to request tickets for any other principal they require.
 * Application servers need to be able to authenticate tickets that are presented to them.
 
-In the long term, it would be good to have a full key-distribution center (KDC) included. This is much bigger task
+In the long term, it would be good to have a full key-distribution center (KDC) included. This is a much bigger task
 because now you need to have some secure database of principals/keys etc. Accessing the database would probably
 entail some form of LDAP access, which is a massive task in itself. This can wait until a later date.
 
@@ -74,14 +74,20 @@ You can load keytab files (as output from other Kerberos implementations, such f
 CL-USER> (cerberus:load-keytab "my.keytab")
 ```
 
-## 6. Notes
+## 6. TODO
+* Need to be able to renew tickets.
+* Somehow need to be able to use this in an application that requires GSS support.
+* Need to support encrypting application messages using the session key.
+
+## 7. Notes
 * Encryption functions provided by the ironclad package.
-* The ASN.1 serializer is specific to this project and NOT a generalized Lisp ASN.1 serializer. Perhaps it could form
-the basis of one in the future.
-* This was developed and tested against the Windows KDC (i.e. active directory). It should work with other KDCs such as MIT and Heimdal, but I've not tried.
+* The ASN.1 serializer is specific to this project and NOT a generalized ASN.1 (DER) serializer. It makes certain assumptions which are valid
+in the context of Kerberos messages, but are not generally applicable. Perhaps it could form the basis of one in the future.
+* This was developed and tested against the Windows KDC (i.e. active directory). It should work with other KDCs such as MIT and Heimdal, 
+but I've not tried.
 * Need to understand the MS-PAC structures, these contain authorization data that is likely to be very useful. 
 
-## 7. License
+## 8. License
 Licensed under the terms of the MIT license.
 
 Frank James 
