@@ -243,14 +243,6 @@ Returns a KDC-REP structure."
 	
 	rep))))
 
-
-
-
-
-
-
-
-
 ;; next stage: need to package up an AP-REQ to be sent to the application server
 ;; typically this message will be encapsualted in the application protocol, so we don't do any direct 
 ;; networking for this, just return a packed octet buffer
@@ -287,13 +279,9 @@ Returns a KDC-REP structure."
 				:usage :ticket))
 	  (error "No key for encryption type ~S" (encrypted-data-type enc))))))
 
-;; this would be used by the server to examine the authenticator and validate the request
-(defun unpack-ap-req (buffer)
-  (unpack #'decode-ap-req buffer))
-
 (defun valid-ticket-p (keylist ap-req-buffer)
-  "Decrypt the ticket and check its contents against the authenticator."
-  (let ((ap-req (unpack-ap-req ap-req-buffer)))
+  "Decrypt the ticket and check its contents against the authenticator. Returns the AP-REQ structure."
+  (let ((ap-req (unpack #'decode-ap-req ap-req-buffer)))
     (let ((ticket (ap-req-ticket ap-req))
 	  (enc-auth (ap-req-authenticator ap-req)))
       ;; start by decrypting the ticket to get the session key 
