@@ -202,6 +202,55 @@ Returns a KDC-REP structure."
 	
 	rep))))
 
+;; unknown whether this works. Is very similar to the request-credentials function
+;; so shouldn't be too hard to get working.
+(defun request-renewal (tgt credentials &key till-time)
+  "Request the renewal of a ticket. The CREDENTIALS should be as returned from REQUEST-CREDENTIALS."
+  (declare (type login-token tgt)
+           (type kdc-rep credentials))
+  (let ((token tgt))
+    (let* ((as-rep (login-token-rep token))
+	   (ekey (enc-kdc-rep-part-key (kdc-rep-enc-part as-rep)))
+	   (ticket (kdc-rep-ticket credentials))
+	   (server (enc-kdc-rep-part-sname (kdc-rep-enc-part credentials))))
+      (let ((rep (send-req-tcp 
+		  (pack #'encode-tgs-req 
+			(make-kdc-request 
+			 (login-token-user token)
+			 :type :tgs
+			 :options '(:renewable :enc-tkt-in-skey)
+			 :realm (login-token-realm token)
+			 :server-principal server
+			 :nonce (random (expt 2 32))
+			 :till-time (or till-time (time-from-now :weeks 6))
+			 :encryption-types (list-all-profiles) 
+			 :pa-data (list (pa-tgs-req (login-token-tgs token)
+						    (encryption-key-value ekey)
+						    (login-token-user token)
+						    (encryption-key-type ekey)))
+			 :tickets (list ticket)))
+		  (login-token-address token))))
+	;; if we got here then the response is a kdc-rep structure (for tgs)
+	;; we need to decrypt the enc-part of the response to verify it
+	;; FIXME: need to know, e.g. the nonce that we used in the request
+	(let ((enc (unpack #'decode-enc-as-rep-part 
+			   (decrypt-data (kdc-rep-enc-part rep)
+					 (encryption-key-value ekey)
+					 :usage :tgs-rep))))
+	  ;; should really validate the reponse here, e.g. check nonce etc.
+	  ;; lets just descrypt it and replace the enc-part with the decrypted enc-part 
+	  (setf (kdc-rep-enc-part rep) enc))
+	
+	rep))))
+
+
+
+
+
+
+
+
+
 ;; next stage: need to package up an AP-REQ to be sent to the application server
 ;; typically this message will be encapsualted in the application protocol, so we don't do any direct 
 ;; networking for this, just return a packed octet buffer
@@ -289,3 +338,47 @@ Returns a KDC-REP structure."
 
 ;; the kdc might send an etype-info2 back which contains information we need to use when generating keys
 ;; e.g. with the aes-cts type encryption, it might send a s2kparams which indicates what the iteration-count should be 
+
+
+;; ----------------------------------------
+;; for sending KRB-PRIV messages
+
+;; for encrypting/decrypting user message data in KRB-PRIV structures
+(defun wrap-message (key octets local-address)
+  "Encrypt a message and sign with the current timestamp.
+
+KEY ::= an encryption-key structure defining the key to use.
+OCTETS ::= an octet array containing the plaintext to encrypt.
+LOCAL-ADDRESS ::= a HOST-ADDRESS structure naming the local server that is sending the message.
+"
+  (declare (type encryption-key key)
+	   (type (vector (unsigned-byte 8)) octets)
+	   (type host-address local-address))
+  (let ((data (pack #'encode-enc-krb-priv-part 
+		    (make-enc-krb-priv-part :data octets
+					    :timestamp (get-universal-time)
+					    :saddr local-address))))
+    (pack #'encode-krb-priv
+	  (make-krb-priv :enc-part 
+			 (encrypt-data (encryption-key-type key)
+				       data
+				       (encryption-key-value key)
+				       :usage :krb-priv)))))
+
+(defun unwrap-message (key octets)
+  "Decrypt the message and validate the timestamp."
+  (declare (type encryption-key key)
+	   (type (vector (unsigned-byte 8)) octets))
+  (let ((enc (krb-priv-enc-part (unpack #'decode-krb-priv octets))))
+    ;; validate the key types match
+    (unless (eq (encryption-key-type key) (encrypted-data-type enc))
+      (error "Key type ~S doesn't match encrypted data type ~S"
+	     (encryption-key-type key) (encrypted-data-type enc)))
+    (let ((data (decrypt-data enc (encryption-key-value key)
+			      :usage :krb-priv)))
+      (let ((priv (unpack #'decode-enc-krb-priv-part data)))
+	;; FIXME: validate the timestamp
+	(enc-krb-priv-part-data priv)))))
+
+
+

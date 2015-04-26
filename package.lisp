@@ -6,11 +6,21 @@
   (:export #:string-to-key
 	   #:request-tgt
 	   #:request-credentials
+	   #:request-renewal
+	   
+	   ;; general utilities
 	   #:principal
 	   #:pack-ap-req
 	   #:valid-ticket-p
+	   #:make-host-address
+
+	   ;; key lists
 	   #:generate-keylist
-	   #:load-keytab))
+	   #:load-keytab
+
+	   ;; user messages
+	   #:wrap-message
+	   #:unwrap-message))
 
 
 

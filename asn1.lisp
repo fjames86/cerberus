@@ -1171,7 +1171,7 @@
 (defsequence krb-cred ((:tag 22) (:class :application))
   (pvno asn1-integer :tag 0 :initial-value 5)
   (type asn1-integer :tag 1 :initial-value 22)
-  (tickets ticket :tag 2) ;; sequence-of
+  (tickets ticket-list :tag 2) ;; sequence-of
   (enc-part encrypted-data :tag 3)) ;; enc-krb-cred-part 
 
 (defsequence enc-krb-cred-part ((:tag 29) (:class :application))
