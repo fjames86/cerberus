@@ -24,12 +24,13 @@ In its simplest form, the Kerberos protocol consists of the following sequence o
 
 The details get more complicated, but that is the general idea.
 
-## 2. Aims
+## 2. Project aims
 The first stage is for clients and application servers to mutually authenticate each other. This means:
 * Clients need to be able to login to the authentication server (AS) and request a ticket-granting ticket (TGT) for 
 the ticket-granting service (TGS).
 * Clients need to be able to use their TGT to request tickets for any other principal they require.
 * Application servers need to be able to authenticate tickets that are presented to them.
+* Some form of GSSAPI support is probably required to be useful?
 
 In the long term, it would be good to have a full key-distribution center (KDC) included. This is a much bigger task
 because now you need to have some secure database of principals/keys etc. Accessing the database would probably
@@ -39,7 +40,7 @@ entail some form of LDAP access, which is a massive task in itself. This can wai
 The public API is not finalized yet, but at the moment you can do something like:
 
 ```
-;; login to the AS and request a TGT
+;; client logs in to the AS and requests a TGT
 CL-USER> (defparameter *tgt* (cerberus:request-tgt "Administrator" "password" "REALM" :kdc-address "10.1.1.1"))
 *TGT*
 ;; request credentials to talk to the user "Administrator"
@@ -50,11 +51,14 @@ CL-USER> (defparameter *buffer* (cerberus:pack-ap-req *creds*))
 *BUFFER*
 ;; send the *BUFFER* to the application server using whatever protocol you need
 
+;; ----- send the buffer to the application server -----
+;; we are now on the application server
+
 ;; the application server must first generate a list of keys for the various encryption profiles
 CL-USER> (defparameter *keylist* (cerberus:generate-keylist "password" :username "Administrator" :realm "REALM"))
 *KEYLIST*
 ;; the application server receives the packed AP-REQ and validates it 
-CL-USER> (cerberus:valid-ticket-p *keylist* (cerberus:pack-ap-req *creds*))
+CL-USER> (cerberus:valid-ticket-p *keylist* *buffer*)
 T
 
 ```
@@ -86,6 +90,7 @@ in the context of Kerberos messages, but are not generally applicable. Perhaps i
 * This was developed and tested against the Windows KDC (i.e. active directory). It should work with other KDCs such as MIT and Heimdal, 
 but I've not tried.
 * Need to understand the MS-PAC structures, these contain authorization data that is likely to be very useful. 
+* GSSAPI structures look simpler than I thought -- maybe just wrapping an InitialContextToken with an OID?
 
 ## 8. License
 Licensed under the terms of the MIT license.
