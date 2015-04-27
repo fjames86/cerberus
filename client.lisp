@@ -9,7 +9,7 @@
 ;; ------------------ kdc ----------------------------------
 
 (defun process-req-response (buffer)
-  "Examine the response, will either be a reply or an error"
+  "Examine the response from the KDC, will either be a reply or an error"
   (let ((code (unpack #'decode-identifier buffer)))
     (ecase code
       (30 ;; error

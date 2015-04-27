@@ -52,3 +52,37 @@
 	       :sname principal
 	       :enc-part (make-encrypted-data :type 0
 					      :cipher octets)))
+
+
+(defun principal-string (names &optional realm)
+  "Converts a list of names and a realm into a principal name string. 
+
+Return ::= Each/Name@Realm
+"
+  (with-output-to-string (s)
+    (let ((done nil))
+      (dolist (name (etypecase names
+		      (list names)
+		      (string (list names))))
+	(when done (format s "/"))
+	(format s "~A" name)
+	(setf done t)))
+    (when realm
+      (format s "@~A" realm))))
+
+(defun string-principal (string)
+  "Parses a principal name string. Returns (values names realm)."
+  (let ((pos 0)
+	(len (length string))
+	(names nil)
+	(realm nil))
+    (do ((i pos (1+ i)))
+	((or (= i len) (char= (char string i) #\@))
+	 (push (subseq string pos i) names)
+	 (setf pos i))
+      (when (char= (char string i) #\/)
+	(push (subseq string pos i) names)
+	(setf pos (1+ i))))
+    (when (< pos len)
+      (setf realm (subseq string (1+ pos))))
+    (values (reverse names) realm)))

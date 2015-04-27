@@ -1,20 +1,38 @@
 ;;;; Copyright (c) Frank James 2015 <frank.a.james@gmail.com>
 ;;;; This code is licensed under the MIT license.
 
+
+;;; This file contains the codes for serializing/deserializing the DER-encoded
+;;; ASN.1 structures which are required for Kerberos. 
+;;; Please note, it is NOT a generalized DER serializer because it makes certain
+;;; assumptions which while valid here are not generally true.
+;;; Known defects:
+;;; * Identifier tags cannot be >30. Tags >= 31 should be encoded in multiple
+;;; octets, but since we never have such tags the codes here do not support it.
+;;; * No validation that the identifier tags we read actually match up with
+;;; the identifier tags we expect to see. 
+;;; 
+;;; Perhaps it could form the basis of a generalized DER serializer at some
+;;; point in the future.
+
+
 (in-package #:cerberus)
 
-;; --------------------------------------
-;; The serialization codes here are copied verbatim from the XDR serializer 
-;; used in FRPC. We're not doing XDR (mores the pity), but the technology is the same
+;; -------------------------------------------------
+;;
+;; The serialization codes here are copied verbatim from the XDR serializer
+;; used in FRPC. We're not doing XDR but the technology is the same.
 ;;
 
-(defvar *xtypes* (make-hash-table))
+(defvar *xtypes* (make-hash-table)
+  "Maps a symbol naming an ASN1 type to a pair of functions which read/write the object.")
 
 (defun %defxtype (name reader writer)
   (setf (gethash name *xtypes*)
 	(list reader writer)))
 
 (defun xtype-reader (name) 
+  "Lookup the reader for the named type."
   (declare (type symbol name))
   (let ((fn (first (gethash name *xtypes*))))
     (if fn
@@ -22,6 +40,7 @@
 	(error "No type ~S" name))))
 
 (defun xtype-writer (name) 
+  "Lookup the writer for the named type."
   (declare (type symbol name))
   (let ((fn (second (gethash name *xtypes*))))
     (if fn
@@ -61,12 +80,6 @@
      (funcall type stream obj))
     (t 
      (funcall (xtype-writer type) stream obj))))
-
-(defun pad-index (index)
-  (let ((m (mod index 4)))
-    (if (zerop m)
-	index
-	(+ index (- 4 m)))))
 
 (defun pack (writer obj)
   "Write the object into an octet-buffer."
@@ -397,50 +410,59 @@
 ;; when encapsulated in other protocols (e.g. gss???)
 
 
-(defparameter *ms-kerberos-oid* #(1 2 840 48018 1 2 2))
-(defparameter *kerberos-oid* #(1 2 840 113554 1 2 2))
+(defparameter *ms-kerberos-oid* '(1 2 840 48018 1 2 2))
+(defparameter *kerberos-oid* '(1 2 840 113554 1 2 2))
+(defparameter *kerberos-principal-oid* '(1 2 840 113554 1 2 2 1))
 
 ;; https://msdn.microsoft.com/en-us/library/bb540809(v=vs.85).aspx
-(defun encode-oid (stream octets)
+(defun encode-oid (stream oid)
+  "Encode an Object Identifier (OID) which is a list of integers."
   (encode-identifier stream 6)
   (let ((bytes 
 	 (flexi-streams:with-output-to-sequence (s)
-	   (let ((b1 (aref octets 0))
-		 (b2 (aref octets 1)))
+	   (let ((b1 (nth 0 oid))
+		 (b2 (nth 1 oid)))
 	     (write-byte (logior (* b1 40) b2) s)
-	     (dotimes (i (- (length octets) 2))
-	       (let ((b (aref octets (+ i 2))))
-		 (cond
-		   ((<= b 127)
-		    (write-byte b s))
-		   (t 
-		    ;; if > 127, then we write multiple 7-bit bytes, 1st byte or'd with #x80
-		    (do ((bytes nil)
-			 (i b (ash i -7)))
-			((zerop i)
-			 (write-byte (logior (car bytes) #x80) s)
-			 (dolist (b (cdr bytes))
-			   (write-byte b s)))
-		      (push (logand i #x7f) bytes))))))))))
+	     (dolist (b (cddr oid))
+	       (cond
+		 ((<= b 127)
+		  (write-byte b s))
+		 (t 
+		  ;; if > 127, then we write multiple 7-bit bytes, 1st byte or'd with #x80
+		  (do ((bytes nil)
+		       (num b (ash num -7)))
+		      ((zerop num)
+		       (do ((%bytes bytes (cdr %bytes)))
+			   ((null %bytes))
+			 (if (null (cdr %bytes))
+			     ;; last one
+			     (write-byte (car %bytes) s)
+			     ;; all others, or with #x80
+			     (write-byte (logior (car %bytes) #x80) s))))
+		    (push (logand num #x7f) bytes)))))))))
     (encode-length stream (length bytes))
     (write-sequence bytes stream)))
 
-;; how to decode multiple bytes????
-;; (defun decode-oid (stream)
-;;   (decode-identifier stream)
-;;   (let ((length (decode-length stream)))
-;;     (let ((bytes (nibbles:make-octet-vector length)))
-;;       (read-sequence bytes stream)
-;;       (do ((oid (list (truncate (aref bytes 0) 40) (mod (aref bytes 1) 40)))
-;; 	   (i 2 (1+ i)))
-;; 	  ((= i length) oid)
-;; 	(let ((b (aref bytes i)))
-;; 	  (cond
-;; 	    ((<= b 127)
-;; 	     (setf oid (append oid (list b))))
-;; 	    (t 
-;; 	     ;; if > 127 then multiple 7-bit bytes, 1st byte or'd with #x80
-;; 	     (
+(defun decode-oid (stream)
+  "Decode an Object Identifier (OID) which is a list of integers."
+  (decode-identifier stream)
+  (let ((length (decode-length stream)))
+    (let ((bytes (nibbles:make-octet-vector length)))
+      (flexi-streams:with-input-from-sequence (s bytes :start 1) (read-sequence bytes stream)
+      (do ((oid (list (truncate (aref bytes 0) 40) (mod (aref bytes 0) 40))))
+	  ((= (file-position s) length) oid)
+	;; collect until <= 127
+	(do ((num 0)
+	     (done nil))
+	    (done (setf oid (append oid (list num))))
+	  (let ((b (read-byte s)))
+	    (cond
+	      ((<= b 127)
+	       (setf num (logior (ash num 7) b)
+		     done t))
+	      (t 
+	       (setf num (logior (ash num 7) 
+				 (logand b #x7f))))))))))))
 	
 ;; ----------------------------
 
@@ -1323,4 +1345,16 @@
       (write-sequence bytes stream))))
 
 ;; need a decode-initial-context-token as well
-
+(defun decode-initial-context-token (stream)
+  (decode-identifier stream) ;; tag=0, class=application
+  (decode-length stream)
+  (decode-identifier stream) ;; tag=0, class=universal
+  (decode-length stream)
+  ;; contents
+  (decode-oid stream)
+  (let ((id (nibbles:make-octet-vector 2)))
+    (read-sequence id stream)
+    (ecase (aref id 0)
+      (01 (decode-ap-req stream))
+      (02 (decode-ap-rep stream))
+      (03 (decode-krb-error stream)))))
