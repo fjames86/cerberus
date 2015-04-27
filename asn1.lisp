@@ -414,14 +414,13 @@
 (defparameter *kerberos-oid* '(1 2 840 113554 1 2 2))
 (defparameter *kerberos-principal-oid* '(1 2 840 113554 1 2 2 1))
 
-;; https://msdn.microsoft.com/en-us/library/bb540809(v=vs.85).aspx
 (defun encode-oid (stream oid)
   "Encode an Object Identifier (OID) which is a list of integers."
   (encode-identifier stream 6)
   (let ((bytes 
 	 (flexi-streams:with-output-to-sequence (s)
-	   (let ((b1 (nth 0 oid))
-		 (b2 (nth 1 oid)))
+	   (let ((b1 (car oid))
+		 (b2 (cadr oid)))
 	     (write-byte (logior (* b1 40) b2) s)
 	     (dolist (b (cddr oid))
 	       (cond
