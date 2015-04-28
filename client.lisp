@@ -280,8 +280,15 @@ Returns a KDC-REP structure."
 	  (error "No key for encryption type ~S" (encrypted-data-type enc))))))
 
 (defun valid-ticket-p (keylist ap-req-buffer)
-  "Decrypt the ticket and check its contents against the authenticator. Returns the AP-REQ structure."
-  (let ((ap-req (unpack #'decode-ap-req ap-req-buffer)))
+  "Decrypt the ticket and check its contents against the authenticator. 
+If the input is an opaque buffer, it is parsed into an AP-REQ strucutre. 
+Alternatively, the input may be a freshly parsed AP-REQ structure. The encrypted parts must still be encrypted, 
+they will be decrypted and examined by this function.
+
+Returns the modifed AP-REQ structure, with enc-parts replaced with decrypted versions."
+  (let ((ap-req (etypecase ap-req-buffer
+		  ((vector (unsigned-byte 8)) (unpack #'decode-ap-req ap-req-buffer))
+		  (ap-req ap-req-buffer))))
     (let ((ticket (ap-req-ticket ap-req))
 	  (enc-auth (ap-req-authenticator ap-req)))
       ;; start by decrypting the ticket to get the session key 
@@ -301,6 +308,11 @@ Returns a KDC-REP structure."
 
 	    ap-req))))))
 
+(defun ap-req-session-key (req)
+  "Extract the session key from the request, so that clients may use it to wrap/unwrap messages."
+  (declare (type ap-req req))
+  (enc-ticket-part-key (ticket-enc-part (ap-req-ticket req))))
+
 ;; --------------------------------------------------------------
 
 ;; I just decrypted a ticket encryped with the rc4-hmac ! 
@@ -311,22 +323,27 @@ Returns a KDC-REP structure."
 ;; where *myticket* is a tgs-rep structure
 ;; 
 
-(defun generate-keylist (password &key username realm salt)
+(defun generate-keylist (username password &optional realm)
   "Generate keys for all the registered profiles."
-  (mapcar (lambda (type)
-	    (make-encryption-key :type type
-				 :value (string-to-key type 
-						       password
-						       (or salt
-							   (format nil "~A~A" 
-								   (string-upcase realm) username)))))
-	  (list-all-profiles)))
-
-
+  (let ((salt (format nil "~A~A" 
+		      (string-upcase realm) username)))
+    (mapcar (lambda (type)
+	      (make-encryption-key :type type
+				   :value (string-to-key type password salt)))
+	    (list-all-profiles))))
 
 ;; the kdc might send an etype-info2 back which contains information we need to use when generating keys
 ;; e.g. with the aes-cts type encryption, it might send a s2kparams which indicates what the iteration-count should be 
 
+
+;; ---------------------------------------
+;; for initial conrtext creation (I.e. GSS)
+
+(defun pack-initial-context-token (message)
+  (pack #'encode-initial-context-token message))
+	
+(defun unpack-initial-context-token (buffer)
+  (unpack #'decode-initial-context-token buffer))
 
 ;; ----------------------------------------
 ;; for sending KRB-PRIV messages

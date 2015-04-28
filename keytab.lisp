@@ -116,7 +116,7 @@
       (file-position stream (+ pos size))
       entry)))
 
-(defun load-keytab (pathspec)
+(defun load-keytab (pathspec &key principal realm)
   "Load the keytab file named by pathspec. Returns a list of keytab-entry structures."
   (with-open-file (f pathspec :direction :input :element-type '(unsigned-byte 8))
     ;; read the version
@@ -126,6 +126,19 @@
       (do ((entries nil))
 	  ((>= (file-position f) size) entries)
 	(let ((entry (read-keytab-entry f)))
-	  (when entry
+	  (when (and entry
+		     (if principal 
+			 (every #'string-equal 
+				(principal-name-name principal) 
+				(principal-name-name (keytab-entry-principal entry)))
+			 t)
+		     (if realm
+			 (string-equal realm (keytab-entry-realm entry))
+			 t))
 	    (push entry entries)))))))
     
+(defun save-keytab (keylist &key principal realm)
+  (declare (ignore keylist principal realm))
+  (error "Implement me!"))
+
+
