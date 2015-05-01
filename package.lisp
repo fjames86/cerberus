@@ -4,6 +4,8 @@
 (defpackage #:cerberus
   (:use #:cl)
   (:export #:string-to-key
+
+	   ;; communication with the KDC
 	   #:request-tgt
 	   #:request-credentials
 	   #:request-renewal
@@ -19,10 +21,11 @@
 	   #:generate-keylist
 	   #:load-keytab
 
-	   ;; user messages
+	   ;; user messages (for gss)
 	   #:pack-initial-context-token
 	   #:unpack-initial-context-token
 
+	   ;; encrypt messages in a KRB-PRIV structure 
 	   #:wrap-message
 	   #:unwrap-message))
 

@@ -247,6 +247,12 @@ Returns a KDC-REP structure."
 ;; typically this message will be encapsualted in the application protocol, so we don't do any direct 
 ;; networking for this, just return a packed octet buffer
 (defun pack-ap-req (credentials &key mutual)
+  "Generate and pack an AP-REQ structure to send to the applicaiton server. CREDENTIALS should be 
+credentials for the application server, as returned from a previous call to REQUEST-CREDENTIALS.
+
+If MUTUAL is T, then mutual authentication is requested and the applicaiton server is expected to 
+respond with an AP-REP structure.
+"
   (declare (type kdc-rep credentials))
   (let ((ticket (kdc-rep-ticket credentials))
 	(cname (kdc-rep-cname credentials))
@@ -279,37 +285,38 @@ Returns a KDC-REP structure."
 				:usage :ticket))
 	  (error "No key for encryption type ~S" (encrypted-data-type enc))))))
 
-(defun valid-ticket-p (keylist ap-req-buffer)
+(defun valid-ticket-p (keylist ap-req)
   "Decrypt the ticket and check its contents against the authenticator. 
 If the input is an opaque buffer, it is parsed into an AP-REQ strucutre. 
 Alternatively, the input may be a freshly parsed AP-REQ structure. The encrypted parts must still be encrypted, 
 they will be decrypted and examined by this function.
 
 Returns the modifed AP-REQ structure, with enc-parts replaced with decrypted versions."
-  (let ((ap-req (etypecase ap-req-buffer
-		  ((vector (unsigned-byte 8)) (unpack #'decode-ap-req ap-req-buffer))
-		  (ap-req ap-req-buffer))))
-    (let ((ticket (ap-req-ticket ap-req))
-	  (enc-auth (ap-req-authenticator ap-req)))
-      ;; start by decrypting the ticket to get the session key 
-      (let ((enc (decrypt-ticket-enc-part keylist ticket)))
-	(setf (ticket-enc-part ticket) enc)
+  ;; if the input is a packed buffer then unpack it 
+  (when (typep ap-req 'vector)
+    (setf ap-req (unpack #'decode-ap-req ap-req)))
 
-	(let ((key (enc-ticket-part-key enc)))
-	  ;; now decrypt the authenticator using the session key we got from the ticket
-	  (let ((a (decrypt-data enc-auth (encryption-key-value key)
-				 :usage :ap-req)))
-	    ;; check the contents of the authenticator against the ticket....
-	    ;; FIXME: for now we just assume it's ok
-
-	    ;; fixup the ap-req and return that
-	    (setf (ap-req-ticket ap-req) ticket
-		  (ap-req-authenticator ap-req) (unpack #'decode-authenticator a))
-
-	    ap-req))))))
+  (let ((ticket (ap-req-ticket ap-req))
+	(enc-auth (ap-req-authenticator ap-req)))
+    ;; start by decrypting the ticket to get the session key 
+    (let ((enc (decrypt-ticket-enc-part keylist ticket)))
+      (setf (ticket-enc-part ticket) enc)
+      
+      (let ((key (enc-ticket-part-key enc)))
+	;; now decrypt the authenticator using the session key we got from the ticket
+	(let ((a (decrypt-data enc-auth (encryption-key-value key)
+			       :usage :ap-req)))
+	  ;; check the contents of the authenticator against the ticket....
+	  ;; FIXME: for now we just assume it's ok
+	  
+	  ;; fixup the ap-req and return that
+	  (setf (ap-req-ticket ap-req) ticket
+		(ap-req-authenticator ap-req) (unpack #'decode-authenticator a))
+	  
+	  ap-req)))))
 
 (defun ap-req-session-key (req)
-  "Extract the session key from the request, so that clients may use it to wrap/unwrap messages."
+  "Extract the session key from the AP request, so that clients may use it to wrap/unwrap messages."
   (declare (type ap-req req))
   (enc-ticket-part-key (ticket-enc-part (ap-req-ticket req))))
 
@@ -343,7 +350,10 @@ Returns the modifed AP-REQ structure, with enc-parts replaced with decrypted ver
   (pack #'encode-initial-context-token message))
 	
 (defun unpack-initial-context-token (buffer)
-  (unpack #'decode-initial-context-token buffer))
+  (let ((res (unpack #'decode-initial-context-token buffer)))
+    (ecase res
+      (krb-error (krb-error res))
+      (otherwise res))))
 
 ;; ----------------------------------------
 ;; for sending KRB-PRIV messages
