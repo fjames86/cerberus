@@ -1350,7 +1350,7 @@
   (decode-identifier stream) ;; tag=0, class=universal
   (decode-length stream)
   ;; contents
-  (decode-oid stream)
+  (decode-oid stream) ;; FIXME: dispatch depending on the OID. It is possible to be wrapped in multiple OIDs 
   (let ((id (nibbles:make-octet-vector 2)))
     (read-sequence id stream)
     (ecase (aref id 0)

@@ -87,6 +87,8 @@ encryption key.
 - [ ] Need to be able to renew tickets.
 - [ ] Somehow need to be able to use this in an application that requires GSS support.
 - [x] Need to support encrypting application messages using the session key.
+- [ ] Some sort of credential cache, i.e. database of TGTs and tickets for other principals
+- [ ] Support cross-realm requests and tickets
 
 ## 7. Notes
 * Encryption functions provided by the ironclad package.

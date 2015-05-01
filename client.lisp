@@ -346,14 +346,19 @@ Returns the modifed AP-REQ structure, with enc-parts replaced with decrypted ver
 ;; ---------------------------------------
 ;; for initial conrtext creation (I.e. GSS)
 
+;; this is an equivalent to GSS_Init_sec_context()
 (defun pack-initial-context-token (message)
   (pack #'encode-initial-context-token message))
 	
+;; this is like GSS_Accept_sec_context
 (defun unpack-initial-context-token (buffer)
   (let ((res (unpack #'decode-initial-context-token buffer)))
     (ecase res
       (krb-error (krb-error res))
       (otherwise res))))
+
+;; GSS_Acquire_cred is like REQUEST-CREDENTIALS 
+;; GSS_Process_context is like VALID-TICKET-P 
 
 ;; ----------------------------------------
 ;; for sending KRB-PRIV messages
