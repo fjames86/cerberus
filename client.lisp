@@ -246,29 +246,32 @@ Returns a KDC-REP structure."
 ;; next stage: need to package up an AP-REQ to be sent to the application server
 ;; typically this message will be encapsualted in the application protocol, so we don't do any direct 
 ;; networking for this, just return a packed octet buffer
-(defun pack-ap-req (credentials &key mutual)
+(defun make-ap-request (credentials &key mutual)
+  (declare (type kdc-rep credentials))
+  (let ((ticket (kdc-rep-ticket credentials))
+	(cname (kdc-rep-cname credentials))
+	(key (enc-kdc-rep-part-key (kdc-rep-enc-part credentials))))
+    (make-ap-req :options (when mutual '(:mutual-required))
+		 :ticket ticket
+		 :authenticator 
+		 (encrypt-data (encryption-key-type key)
+			       (pack #'encode-authenticator 
+				     (make-authenticator :crealm (ticket-realm ticket)
+							 :cname cname
+							 :ctime (get-universal-time)
+							 :cusec 0))
+			       (encryption-key-value key)
+			       :usage :ap-req))))
+
+(defun pack-ap-request (credentials &key mutual)
   "Generate and pack an AP-REQ structure to send to the applicaiton server. CREDENTIALS should be 
 credentials for the application server, as returned from a previous call to REQUEST-CREDENTIALS.
 
 If MUTUAL is T, then mutual authentication is requested and the applicaiton server is expected to 
 respond with an AP-REP structure.
-"
-  (declare (type kdc-rep credentials))
-  (let ((ticket (kdc-rep-ticket credentials))
-	(cname (kdc-rep-cname credentials))
-	(key (enc-kdc-rep-part-key (kdc-rep-enc-part credentials))))
+"  
     (pack #'encode-ap-req 
-	  (make-ap-req :options (when mutual '(:mutual-required))
-		       :ticket ticket
-		       :authenticator 
-		       (encrypt-data (encryption-key-type key)
-				     (pack #'encode-authenticator 
-					   (make-authenticator :crealm (ticket-realm ticket)
-							       :cname cname
-							       :ctime (get-universal-time)
-							       :cusec 0))
-				     (encryption-key-value key)
-				     :usage :ap-req)))))
+	  (make-ap-request credentials :mutual mutual)))
 
 ;; --------------- application server -------------------------
 
@@ -353,7 +356,7 @@ Returns the modifed AP-REQ structure, with enc-parts replaced with decrypted ver
 ;; this is like GSS_Accept_sec_context
 (defun unpack-initial-context-token (buffer)
   (let ((res (unpack #'decode-initial-context-token buffer)))
-    (ecase res
+    (typecase res
       (krb-error (krb-error res))
       (otherwise res))))
 

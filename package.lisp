@@ -12,7 +12,7 @@
 	   
 	   ;; general utilities
 	   #:principal
-	   #:pack-ap-req
+	   #:make-ap-request
 	   #:valid-ticket-p
 	   #:make-host-address
 	   #:ap-req-session-key 
