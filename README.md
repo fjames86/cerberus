@@ -45,7 +45,7 @@ CL-USER> (defparameter *tgt* (cerberus:request-tgt "Administrator" "password" "R
 CL-USER> (defparameter *creds* (cerberus:request-credentials *tgt* (cerberus:principal "Administrator")))
 *CREDS*
 ;; pack an AP-REQ structure to be sent to the application server
-CL-USER> (defparameter *buffer* (cerberus:pack-ap-req *creds*))
+CL-USER> (defparameter *buffer* (cerberus:pack-initial-context-token (cerberus:make-ap-request *creds*)))
 *BUFFER*
 ;; send the *BUFFER* to the application server using whatever protocol you need
 
@@ -56,7 +56,7 @@ CL-USER> (defparameter *buffer* (cerberus:pack-ap-req *creds*))
 CL-USER> (defparameter *keylist* (cerberus:generate-keylist "password" :username "Administrator" :realm "REALM"))
 *KEYLIST*
 ;; the application server receives the packed AP-REQ and validates it 
-CL-USER> (cerberus:valid-ticket-p *keylist* *buffer*)
+CL-USER> (cerberus:valid-ticket-p *keylist* (cerberus:unpack-initial-context-token *buffer*))
 T
 
 ```
