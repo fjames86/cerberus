@@ -255,7 +255,6 @@ Returns a KDC-REP structure."
 ;; the kdc might send an etype-info2 back which contains information we need to use when generating keys
 ;; e.g. with the aes-cts type encryption, it might send a s2kparams which indicates what the iteration-count should be 
 
-
 ;; next stage: need to package up an AP-REQ to be sent to the application server
 ;; typically this message will be encapsualted in the application protocol, so we don't do any direct 
 ;; networking for this, just return a packed octet buffer
