@@ -252,6 +252,10 @@ Returns a KDC-REP structure."
 	
 	rep))))
 
+;; the kdc might send an etype-info2 back which contains information we need to use when generating keys
+;; e.g. with the aes-cts type encryption, it might send a s2kparams which indicates what the iteration-count should be 
+
+
 ;; next stage: need to package up an AP-REQ to be sent to the application server
 ;; typically this message will be encapsualted in the application protocol, so we don't do any direct 
 ;; networking for this, just return a packed octet buffer
@@ -334,14 +338,6 @@ Returns the modifed AP-REQ structure, with enc-parts replaced with decrypted ver
 
 ;; --------------------------------------------------------------
 
-;; I just decrypted a ticket encryped with the rc4-hmac ! 
-;; (unpack #'decode-enc-ticket-part 
-;;   (decrypt-data (ticket-enc-part (kdc-rep-ticket *myticket*)) 
-;;  			(string-to-key :rc4-hmac "password" nil)
-;;			:usage (key-usage :ticket)))
-;; where *myticket* is a tgs-rep structure
-;; 
-
 (defun generate-keylist (username password &optional realm)
   "Generate keys for all the registered profiles."
   (let ((salt (format nil "~A~A" 
@@ -350,10 +346,6 @@ Returns the modifed AP-REQ structure, with enc-parts replaced with decrypted ver
 	      (make-encryption-key :type type
 				   :value (string-to-key type password salt)))
 	    (list-all-profiles))))
-
-;; the kdc might send an etype-info2 back which contains information we need to use when generating keys
-;; e.g. with the aes-cts type encryption, it might send a s2kparams which indicates what the iteration-count should be 
-
 
 ;; ---------------------------------------
 ;; for initial conrtext creation (I.e. GSS)
