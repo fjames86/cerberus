@@ -20,39 +20,6 @@
       (13 ;; tgs-rep
        (unpack #'decode-tgs-rep buffer)))))
 
-;; UDP doesn't seem very useful. Whenever I've called it I've got 
-;; a "response would be too large to fit in UDP" error. Seems like TCP
-;; is the way to do it.  
-(defun send-req-udp (msg host &optional port)
-  "Send a message to the KDC using UDP"
-  (let ((socket (usocket:socket-connect host (or port 88)
-					:protocol :datagram
-					:element-type '(unsigned-byte 8))))
-    (unwind-protect 
-	 (progn
-	   (usocket:socket-send socket msg (length msg))
-	   (if (usocket:wait-for-input (list socket) :timeout 1 :ready-only t)
-           (multiple-value-bind (buffer count) (usocket:socket-receive socket (nibbles:make-octet-vector 1024) 1024)
-             (when (or (= count -1) (= count #xffffffff))
-               (error "recvfrom returned -1"))
-             (process-req-response buffer))
-           (error "timeout")))
-      (usocket:socket-close socket))))
-
-(defun as-req-udp (kdc-host client realm &key options till-time renew-time host-addresses
-                                       pa-data tickets authorization-data)
-  (send-req-udp (pack #'encode-as-req 
-                  (make-as-request client realm
-                                   :options options
-                                   :till-time till-time
-                                   :renew-time renew-time
-                                   :host-addresses host-addresses
-                                   :encryption-types (list-all-profiles)
-                                   :pa-data pa-data
-                                   :tickets tickets
-                                   :authorization-data authorization-data))
-            kdc-host))
-
 ;; tcp
 (defun send-req-tcp (msg host &optional port)
   "Send a message to the KDC using TCP"
@@ -116,6 +83,16 @@
 (defvar *kdc-address* nil 
   "The address of the default KDC.")
 
+(defvar *tgt-cache* nil)
+
+(defun find-tgt (principal realm)
+  (find-if (lambda (tgt)
+	     (and (string= (login-token-realm tgt) realm)
+		  (every #'string= 
+			 (principal-name-name (login-token-user tgt))
+			 (principal-name-name principal))))
+	   *tgt-cache*))
+
 (defun request-tgt (username password realm &key kdc-address till-time (etype :des-cbc-md5))
   "Login to the authentication server to reqest a ticket for the Ticket-granting server. Returns a LOGIN-TOKEN
 structure which should be used for requests for further tickets.
@@ -137,6 +114,10 @@ ETYPE ::= encryption profile name to use for pre-authentication.
                             password
                             (format nil "~A~A" (string-upcase realm) username)))
         (principal (principal username)))
+
+    (let ((tgt (find-tgt principal realm)))
+      (when tgt (return-from request-tgt tgt)))
+
     (let ((as-rep 
            (as-req-tcp kdc-address
                        principal
@@ -156,20 +137,45 @@ ETYPE ::= encryption profile name to use for pre-authentication.
         ;; lets just descrypt it and replace the enc-part with the decrypted enc-part 
         (setf (kdc-rep-enc-part as-rep) enc))
 
-      ;; the return value
-      (make-login-token :address *kdc-address*
-                        :rep as-rep
-                        :tgs (kdc-rep-ticket as-rep)
-                        :user principal
-                        :realm realm))))
+      ;; store and return the value
+      (let ((tgt (make-login-token :address *kdc-address*
+				   :rep as-rep
+				   :tgs (kdc-rep-ticket as-rep)
+				   :user principal
+				   :realm realm)))
+	(push tgt *tgt-cache*)
+	tgt))))
+
+(defvar *credential-cache* nil)
+
+(defun find-credentials (principal realm)
+  (find-if (lambda (cred)
+	     (and (string= realm (kdc-rep-crealm cred))
+		  (every #'string= 
+			 (principal-name-name (kdc-rep-cname cred))
+			 (principal-name-name principal))))
+	   *cred-cache*))
 
 ;; this worked. I got a ticket for the principal named
 (defun request-credentials (tgt server &key till-time)  
   "Request a ticket for the named principal using the TGS ticket previously requested.
 
+TGT ::= a ticket-granting ticket as returned from REQUEST-TGT.
+
+SERVER ::= a principal, as returned from PRINCIPAL. Can be a string, in which case it is 
+converted to a principal.
+
 Returns a KDC-REP structure."  
   (declare (type login-token tgt)
-           (type principal-name server))
+	   (type (or principal-name string) server))
+
+  ;; if a string then convert to a principal
+  (when (stringp server)
+    (setf server (principal server)))
+  
+  (let ((cred (find-credentials (login-token-user tgt) (login-token-realm tgt))))
+    (when cred (return-from request-credentials cred)))
+
   (let ((token tgt))
     (let* ((as-rep (login-token-rep token))
 	   (ekey (enc-kdc-rep-part-key (kdc-rep-enc-part as-rep))))
@@ -200,6 +206,9 @@ Returns a KDC-REP structure."
 	  ;; lets just descrypt it and replace the enc-part with the decrypted enc-part 
 	  (setf (kdc-rep-enc-part rep) enc))
 	
+	;; store in the credential cache
+	(push rep *credential-cache*)
+
 	rep))))
 
 ;; unknown whether this works. Is very similar to the request-credentials function
