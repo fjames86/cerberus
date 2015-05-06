@@ -1320,12 +1320,18 @@
 ;; GSS-related structures
 
 ;; gss requires us to wrap things with an OID
+;; message may be an octet array, not a structure 
+;; this is because the initial-context-token is used to wrap
+;; other tokens, not just ap-req/ap-rep/krb-errors
+
 (defun encode-initial-context-token (stream message)
   (declare (type stream stream)
 	   (type (or ap-req ap-rep krb-error) message))
   (let ((octets (flexi-streams:with-output-to-sequence (s)
 		  (encode-oid s *kerberos-oid*)
 		  (etypecase message
+		    (vector ;; generalized octet buffer
+		     (write-sequence message s))
 		    (ap-req 
 		     (write-sequence #(01 00) s) ;; TOK_ID field
 		     (encode-ap-req s message))
@@ -1353,7 +1359,13 @@
   (decode-oid stream) ;; FIXME: dispatch depending on the OID. It is possible to be wrapped in multiple OIDs 
   (let ((id (nibbles:make-octet-vector 2)))
     (read-sequence id stream)
-    (ecase (aref id 0)
-      (01 (decode-ap-req stream))
-      (02 (decode-ap-rep stream))
-      (03 (decode-krb-error stream)))))
+    (if (= (aref id 1) 0)
+	(ecase (aref id 0)
+	  (01 (decode-ap-req stream))
+	  (02 (decode-ap-rep stream))
+	  (03 (decode-krb-error stream)))
+	;; rest of stream contains the token, i.e. read until the end of the stream
+	(flexi-streams:with-output-to-sequence (s)
+	  (do ((b (read-byte stream nil nil) (read-byte stream nil nil)))
+	      ((null b))
+	    (write-byte b s))))))
