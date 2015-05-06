@@ -104,25 +104,50 @@ c.f. GSS_Accept_sec_context
 
 
 ;; ;; GSS_Wrap()
-;; (defgeneric gss-wrap (mech-type context-handle message &key))
+(defgeneric gss-wrap (mech-type context-handle message &key))
 
-;; ;; context handle is the ap-req 
-;; (defmethod gss-wrap ((mech-type (eql :kerberos)) context-handle message &key session-key initiator)
-;;   (let ((req context-handle))
-;;     (declare (type ap-req req))
-;;     (pack-initial-context-token 
-;;      (flexi-streams:with-output-to-sequence (s)
-;;        (write-sequence '(2 1) s) ;; TOK_ID 
-;;        (write-sequence '(0 0) s) ;; sgn_alg == des mac md5
-;;        (write-sequence '(0 0) s) ;; seal_alg == des
-;;        (write-sequence '(#xff #xff) s) ;; filler
-;;        ;; encrypted seqno field
-;;        ;; checksum
-;;        ;; encrypted body
-;;        ))))
+;; context handle is the ap-req 
+(defmethod gss-wrap ((mech-type (eql :kerberos)) context-handle message &key session-key initiator)
+  (let ((req context-handle))
+    (declare (type ap-req req))
+    ;; start by padding the message
+    (let* ((len (length message))
+	   (msg (concatenate '(vector (unsigned-byte 8))
+			     (loop :for i :below 8 :collect (random 256)) ;; confounder 
+			     message
+			     (unless (zerop (mod len 8)) ;; padding 
+			       (loop :for i :below (- 8 (mod len 8)) :collect (- 8 (mod len 8))))))
+	   (key (map '(vector (unsigned-byte 8)) 
+		     (lambda (x) (logxor x #xf0))
+		     session-key))
+	   (cksum (des-mac (md5 message)
+			     nil
+			     session-key))
+	   (seqno (encrypt-des-cbc session-key 
+				   (concatenate '(vector (unsigned-byte 8)) 
+						(let ((v (nibbles:make-octet-vector 4)))
+						  (setf (nibbles:ub32ref/be v 0) 
+							(authenticator-seqno (ap-req-authenticator req)))
+						  v)
+						(if initiator '(0 0 0 0) '(#xff #xff #xff #xff)))
+				   :initialization-vector (subseq cksum 0 8))))
+	         
+    (pack-initial-context-token 
+     (flexi-streams:with-output-to-sequence (s)
+       (write-sequence '(2 1) s) ;; TOK_ID 
+       (write-sequence '(0 0) s) ;; sgn_alg == des mac md5
+       (write-sequence '(0 0) s) ;; seal_alg == des
+       (write-sequence '(#xff #xff) s) ;; filler
+       ;; encrypted seqno field
+       (write-sequence seqno s)
+       ;; checksum
+       (write-sequence cksum s)
+       ;; encrypted body
+       (write-sequence (encrypt-des-cbc key msg) s))))))
 
 
 ;; ;; GSS_Unwrap()
-;; (defgeneric gss-unwrap (mech-type context-handle message &key))
+;; (defgeneric gss-unwrap (mech-type context-handle buffer &key))
 
-
+;; (defmethod gss-unwrap ((mech-type (eql :kerberos)) context-handle buffer &key session-key initiator)
+  
