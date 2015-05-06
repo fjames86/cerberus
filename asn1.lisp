@@ -1365,7 +1365,10 @@
 	  (02 (decode-ap-rep stream))
 	  (03 (decode-krb-error stream)))
 	;; rest of stream contains the token, i.e. read until the end of the stream
-	(flexi-streams:with-output-to-sequence (s)
-	  (do ((b (read-byte stream nil nil) (read-byte stream nil nil)))
-	      ((null b))
-	    (write-byte b s))))))
+	(concatenate '(vector (unsigned-byte 8))
+		     id 
+		     (flexi-streams:with-output-to-sequence (s)
+		       (do ((b (read-byte stream nil nil) (read-byte stream nil nil)))
+			   ((null b))
+			 (write-byte b s)))))))
+  
