@@ -154,7 +154,7 @@ ETYPE ::= encryption profile name to use for pre-authentication.
 		  (every #'string= 
 			 (principal-name-name (kdc-rep-cname cred))
 			 (principal-name-name principal))))
-	   *cred-cache*))
+	   *credential-cache*))
 
 ;; this worked. I got a ticket for the principal named
 (defun request-credentials (tgt server &key till-time)  
