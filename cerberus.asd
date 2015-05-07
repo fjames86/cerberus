@@ -16,7 +16,8 @@
    (:file "errors" :depends-on ("package"))
    (:file "preauth" :depends-on ("asn1" "ciphers"))
    (:file "client" :depends-on ("package" "preauth"))
-   (:file "keytab" :depends-on ("package" "asn1")))
+   (:file "keytab" :depends-on ("package" "asn1"))
+   (:file "gss" :depends-on ("client")))
   :depends-on (:alexandria :nibbles :flexi-streams :babel 
 	       :ironclad :usocket))
 
