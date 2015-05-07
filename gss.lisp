@@ -10,7 +10,7 @@
 ;; ----------- for the client ---------------
 
 (defgeneric gss-acquire-credential (mech-type principal &key)
-  (:documentation "Acquire credentials for the principal named. Returns a CREDENTIALS, for input into INITIALIZE-SECURITY-CONTEXT. c.f. GSS_Acquire_cred."))
+  (:documentation "Acquire credentials for the principal named. Returns CREDENTIALS, for input into INITIALIZE-SECURITY-CONTEXT. c.f. GSS_Acquire_cred."))
 
 (defmethod gss-acquire-credential ((mech-type (eql :kerberos)) principal &key username password realm kdc-address till-time)
   (let ((tgt (if (and username password kdc-address)
@@ -20,7 +20,7 @@
 		 (find-if (lambda (tgt)
 			    (string= (login-token-realm tgt) realm))
 			  *tgt-cache*))))
-    (unless tgt (error "No TGT for the specified user."))
+    (unless tgt (error "No TGT for the specified user, login by providing user credentials."))
     (request-credentials tgt principal :till-time till-time)))
 
 (defgeneric gss-initialize-security-context (mech-type credentials &key)
@@ -147,7 +147,43 @@ c.f. GSS_Accept_sec_context
 
 
 ;; ;; GSS_Unwrap()
-;; (defgeneric gss-unwrap (mech-type context-handle buffer &key))
+(defgeneric gss-unwrap (mech-type context-handle buffer &key))
 
-;; (defmethod gss-unwrap ((mech-type (eql :kerberos)) context-handle buffer &key session-key initiator)
+(defmethod gss-unwrap ((mech-type (eql :kerberos)) context-handle buffer &key session-key initiator)
+  ;; start by extracting the token from the buffer
+  (let ((tok (unpack-initial-context-token buffer))
+	(req context-handle))
+    (declare (type ap-req req))
+    ;; get the seqno, cksum and encrypted body
+    (let ((eseqno (subseq tok 8 16))
+	  (cksum (subseq tok 16 24))
+	  (emsg (subseq tok 24))
+	  (key (map '(vector (unsigned-byte 8)) 
+		    (lambda (x) (logxor x #xf0))
+		    session-key)))
+      ;; start by decrypting the body
+      (let* ((msg (decrypt-des-cbc key emsg))
+	     (message (subseq msg 8))) ;; drop the confounder 
+	;; compute the checksum
+	(let ((the-cksum (des-mac (md5 message)
+				  nil
+				  session-key)))
+	  ;; validate the checksums match
+	  (unless (equalp cksum the-cksum) (error 'checksum-error))
+	  ;; now decrypt the seqno
+	  (let ((seqno (decrypt-des-cbc session-key
+					eseqno
+					:initialization-vector (subseq the-cksum 0 8))))
+	    ;; check the seqnos match
+	    (unless (equalp seqno
+			    (concatenate '(vector (unsigned-byte 8))
+					 (let ((v (nibbles:make-octet-vector 4)))
+					   (setf (nibbles:ub32ref/be v 0) 
+						 (authenticator-seqno (ap-req-authenticator req)))
+					   v)
+					 (if initiator '(0 0 0 0) '(#xff #xff #xff #xff))))
+	      (error "Seqnos don't match"))))
+	;; return the decrypted message
+	message))))
+      
   

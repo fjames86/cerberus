@@ -1326,7 +1326,7 @@
 
 (defun encode-initial-context-token (stream message)
   (declare (type stream stream)
-	   (type (or ap-req ap-rep krb-error) message))
+	   (type (or vector ap-req ap-rep krb-error) message))
   (let ((octets (flexi-streams:with-output-to-sequence (s)
 		  (encode-oid s *kerberos-oid*)
 		  (etypecase message
@@ -1342,7 +1342,7 @@
 		     (write-sequence #(03 00) s) 
 		     (encode-krb-error s message))))))
     (let ((bytes (flexi-streams:with-output-to-sequence (s)
-		   (encode-identifier s 0 :primitive nil)
+		   (encode-identifier s 16 :primitive nil) ;; sequence tag 
 		   (encode-length s (length octets))
 		   (write-sequence octets s))))
       (encode-identifier stream 0 :class :application :primitive nil)
@@ -1353,22 +1353,24 @@
 (defun decode-initial-context-token (stream)
   (decode-identifier stream) ;; tag=0, class=application
   (decode-length stream)
-  (decode-identifier stream) ;; tag=0, class=universal
-  (decode-length stream)
-  ;; contents
-  (decode-oid stream) ;; FIXME: dispatch depending on the OID. It is possible to be wrapped in multiple OIDs 
-  (let ((id (nibbles:make-octet-vector 2)))
-    (read-sequence id stream)
-    (if (= (aref id 1) 0)
-	(ecase (aref id 0)
-	  (01 (decode-ap-req stream))
-	  (02 (decode-ap-rep stream))
-	  (03 (decode-krb-error stream)))
-	;; rest of stream contains the token, i.e. read until the end of the stream
-	(concatenate '(vector (unsigned-byte 8))
-		     id 
-		     (flexi-streams:with-output-to-sequence (s)
-		       (do ((b (read-byte stream nil nil) (read-byte stream nil nil)))
-			   ((null b))
-			 (write-byte b s)))))))
+  (decode-identifier stream) ;; tag=16, class=universal
+  (let ((len (decode-length stream)))
+    ;; contents
+    (decode-oid stream) ;; FIXME: dispatch depending on the OID. It is possible to be wrapped in multiple OIDs 
+    (let ((id (nibbles:make-octet-vector 2)))
+      (read-sequence id stream)
+      (if (= (aref id 1) 0)
+	  (ecase (aref id 0)
+	    (01 (decode-ap-req stream))
+	    (02 (decode-ap-rep stream))
+	    (03 (decode-krb-error stream)))
+	  ;; we are given the length rest of stream contains the token, i.e. read until the end of the stream
+	  ;; don't forget to put the TOK_ID back at the start 
+	  (concatenate '(vector (unsigned-byte 8))
+		       id 
+		       (flexi-streams:with-output-to-sequence (s)
+			 (do ((i 0 (1+ i))
+			      (b (read-byte stream) (read-byte stream)))
+			     ((= b len))
+			   (write-byte b s))))))))
   

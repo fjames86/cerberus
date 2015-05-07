@@ -391,5 +391,18 @@ AD-AND-OR               ::= SEQUENCE {
 
 AD-MANDATORY-FOR-KDC    ::= AuthorizationData
 
+
+InitialContextToken ::=
+   [APPLICATION 0] IMPLICIT SEQUENCE {
+           thisMech        MechType
+                   -- MechType is OBJECT IDENTIFIER
+                   -- representing "Kerberos V5"
+           innerContextToken ANY DEFINED BY thisMech
+                   -- contents mechanism-specific;
+                   -- ASN.1 usage within innerContextToken
+                   -- is not required
+           }
+
+
 END
 
