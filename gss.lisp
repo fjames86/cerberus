@@ -53,9 +53,10 @@ c.f. GSS_Accept_sec_context
 (defgeneric gss-get-mic (mech-type context-handle message &key))
 
 ;; the context handle MUST be the kdc-rep i.e. the "credentials" that were passed into the initialize-context
-(defmethod gss-get-mic ((mech-type (eql :kerberos)) context-handle message &key initiator session-key)
-  (let ((req context-handle))
-    (declare (type ap-req req))
+(defmethod gss-get-mic ((mech-type (eql :kerberos)) context-handle message &key initiator)
+  (declare (type ap-req context-handle))
+  (let ((req context-handle)
+	(session-key (ap-req-session-key context-handle)))
     (pack-initial-context-token 
      (flexi-streams:with-output-to-sequence (s)
        (write-sequence '(1 1) s) ;; TOK_ID == getmic
@@ -84,10 +85,11 @@ c.f. GSS_Accept_sec_context
 ;; GSS_VerifyMIC()
 (defgeneric gss-verify-mic (mech-type context-handle message message-token &key))
 
-(defmethod gss-verify-mic ((mech-type (eql :kerberos)) context-handle message message-token &key initiator session-key)
+(defmethod gss-verify-mic ((mech-type (eql :kerberos)) context-handle message message-token &key initiator)
+  (declare (type ap-req context-handle))
   (let ((req context-handle)
-	(tok (unpack-initial-context-token message-token)))
-    (declare (type ap-req req))
+	(tok (unpack-initial-context-token message-token))
+	(session-key (ap-req-session-key context-handle)))
     ;; start by getting the checksum and seqno fields
     (let ((seqno (subseq tok 8 16))
 	  (cksum (subseq tok 16 24))
@@ -107,9 +109,10 @@ c.f. GSS_Accept_sec_context
 (defgeneric gss-wrap (mech-type context-handle message &key))
 
 ;; context handle is the ap-req 
-(defmethod gss-wrap ((mech-type (eql :kerberos)) context-handle message &key session-key initiator)
-  (let ((req context-handle))
-    (declare (type ap-req req))
+(defmethod gss-wrap ((mech-type (eql :kerberos)) context-handle message &key initiator)   
+  (declare (type ap-req context-handle))
+  (let ((req context-handle)
+	(session-key (ap-req-session-key context-handle)))
     ;; start by padding the message
     (let* ((len (length message))
 	   (msg (concatenate '(vector (unsigned-byte 8))
@@ -149,11 +152,12 @@ c.f. GSS_Accept_sec_context
 ;; ;; GSS_Unwrap()
 (defgeneric gss-unwrap (mech-type context-handle buffer &key))
 
-(defmethod gss-unwrap ((mech-type (eql :kerberos)) context-handle buffer &key session-key initiator)
+(defmethod gss-unwrap ((mech-type (eql :kerberos)) context-handle buffer &key initiator)
   ;; start by extracting the token from the buffer
+  (declare (type ap-req context-handle))
   (let ((tok (unpack-initial-context-token buffer))
-	(req context-handle))
-    (declare (type ap-req req))
+	(req context-handle)
+	(session-key (ap-req-session-key context-handle)))
     ;; get the seqno, cksum and encrypted body
     (let ((eseqno (subseq tok 8 16))
 	  (cksum (subseq tok 16 24))

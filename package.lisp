@@ -24,6 +24,15 @@
 	   ;; user messages (for gss)
 	   #:pack-initial-context-token
 	   #:unpack-initial-context-token
+	   
+	   ;; the "GSS" compatible API 
+	   #:gss-acquire-credentials
+	   #:gss-initialize-security-context
+	   #:gss-accept-security-context 
+	   #:gss-get-mic 
+	   #:gss-verify-mic 
+	   #:gss-wrap
+	   #:gss-unwrap
 
 	   ;; encrypt messages in a KRB-PRIV structure 
 	   #:wrap-message
