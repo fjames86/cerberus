@@ -102,7 +102,8 @@ c.f. GSS_Accept_sec_context
   (let* ((req (kerberos-context-req context))
 	 (session-key (kerberos-context-key context))
 	 (key (subseq (encryption-key-value session-key) 0 8))
-	 (initiator (kerberos-context-initiator context)))
+	 (initiator (kerberos-context-initiator context))
+	 (message (concatenate '(vector (unsigned-byte 8)) message)))
     (pack-initial-context-token 
      (flexi-streams:with-output-to-sequence (s)
        (write-sequence '(1 1) s) ;; TOK_ID == getmic
@@ -139,7 +140,8 @@ c.f. GSS_Accept_sec_context
   (let* ((req (kerberos-context-req context))
 	 (tok (unpack-initial-context-token message-token))
 	 (session-key (ap-req-session-key req))
-	 (key (subseq (encryption-key-value session-key) 0 8)))
+	 (key (subseq (encryption-key-value session-key) 0 8))
+	 (message (concatenate '(vector (unsigned-byte 8)) message)))
     ;; start by getting the checksum and seqno fields
     (let ((seqno (subseq tok 8 16))
 	  (cksum (subseq tok 16 24))
@@ -163,8 +165,10 @@ c.f. GSS_Accept_sec_context
 ;; context handle is the ap-req 
 (defmethod gss-wrap ((context kerberos-context) message &key)   
   (let* ((req (kerberos-context-req context))
-	 (session-key (ap-req-session-key req))
-	 (initiator (kerberos-context-initiator context)))
+	 (session-key (subseq (encryption-key-value (kerberos-context-key context))
+			      0 8))
+	 (initiator (kerberos-context-initiator context))
+	 (message (concatenate '(vector (unsigned-byte 8)) message)))
     ;; start by padding the message
     (let* ((len (length message))
 	   (msg (concatenate '(vector (unsigned-byte 8))
@@ -175,7 +179,7 @@ c.f. GSS_Accept_sec_context
 	   (key (map '(vector (unsigned-byte 8)) 
 		     (lambda (x) (logxor x #xf0))
 		     session-key))
-	   (cksum (des-mac (md5 message)
+	   (cksum (des-mac (md5 msg) ;;message)
 			     nil
 			     session-key))
 	   (seqno (encrypt-des-cbc session-key 
@@ -210,7 +214,8 @@ c.f. GSS_Accept_sec_context
   ;; start by extracting the token from the buffer
   (let* ((tok (unpack-initial-context-token buffer))
 	 (req (kerberos-context-req context))
-	 (session-key (ap-req-session-key req))
+	 (session-key (subseq (encryption-key-value (kerberos-context-key context))
+			      0 8))
 	 (initiator (kerberos-context-initiator context)))
     ;; get the seqno, cksum and encrypted body
     (let ((eseqno (subseq tok 8 16))
@@ -223,7 +228,7 @@ c.f. GSS_Accept_sec_context
       (let* ((msg (decrypt-des-cbc key emsg))
 	     (message (subseq msg 8))) ;; drop the confounder 
 	;; compute the checksum
-	(let ((the-cksum (des-mac (md5 message)
+	(let ((the-cksum (des-mac (md5 msg) ;;message)
 				  nil
 				  session-key)))
 	  ;; validate the checksums match
@@ -241,7 +246,7 @@ c.f. GSS_Accept_sec_context
 						     (kerberos-context-seqno context)
 						     (authenticator-seqno (ap-req-authenticator req))))
 					   v)
-					 (if initiator '(0 0 0 0) '(#xff #xff #xff #xff))))
+					 (if (not initiator) '(0 0 0 0) '(#xff #xff #xff #xff))))
 	      (error "Seqnos don't match"))))
 	;; return the decrypted message
 	message))))
