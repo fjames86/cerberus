@@ -1,7 +1,7 @@
 ;;;; Copyright (c) Frank James 2015 <frank.a.james@gmail.com>
 ;;;; This code is licensed under the MIT license.
 
-;;; This file contains the codes necessary to wrap the underlying 
+;;; This file contains the codes necessary to wrap the underlying
 ;;; kerberos calls in a gss-like API
 ;;; 
 
@@ -23,13 +23,6 @@
 ;; -------------------- for everyone ------------
 ;; everyone calls this, but the semantics are different if you are a server or client 
 
-(defgeneric gss-acquire-credential (mech-type principal &key)
-  (:documentation "Acquire credentials for the principal named. Returns CREDENTIALS, for input into INITIALIZE-SECURITY-CONTEXT. c.f. GSS_Acquire_cred.
-
-MECH-TYPE ::= symbol naming the authentication mechamism
-PRINCIPAL ::= the security principal you are requesting credentials for.
-"))
-
 (defclass kerberos-context ()
   ((creds :initarg :creds :initform nil :accessor kerberos-context-creds)
    (req :initarg :req :initform nil :accessor kerberos-context-req)
@@ -38,7 +31,7 @@ PRINCIPAL ::= the security principal you are requesting credentials for.
    (seqno :initform 0 :accessor kerberos-context-seqno)
    (initiator :initform nil :initarg :initiator :accessor kerberos-context-initiator)))
 
-(defmethod gss-acquire-credential ((mech-type (eql :kerberos)) principal 
+(defmethod glass:acquire-credential ((mech-type (eql :kerberos)) principal 
 				   &key username password realm kdc-address till-time)
   (cond
     ((and kdc-address username password realm)
@@ -68,10 +61,7 @@ PRINCIPAL ::= the security principal you are requesting credentials for.
 
 ;; ----------- for the client ---------------
       
-(defgeneric gss-initialize-security-context (context &key)
-  (:documentation "Returns a security context to be sent to the application server. c.f. GSS_Init_sec_context"))
-
-(defmethod gss-initialize-security-context ((context kerberos-context) &key mutual)
+(defmethod glass:initialize-security-context ((context kerberos-context) &key mutual)
   (let* ((req (make-ap-request (kerberos-context-creds context) 
 			       :mutual mutual
 			       :seqno (kerberos-context-seqno context))) ;; FIXME: also need the checksum!
@@ -85,14 +75,7 @@ PRINCIPAL ::= the security principal you are requesting credentials for.
 	  
 ;; ---------- for the application server -----------
 
-(defgeneric gss-accept-security-context (context buffer &key)
-  (:documentation "CREDENTIALS are credentials for the server principal. CONTEXT is the packed 
-buffer sent from the client. It should be as returned from INITIALIZE-SECURITY-CONTEXT.
-
-c.f. GSS_Accept_sec_context
-"))
-
-(defmethod gss-accept-security-context ((context kerberos-context) buffer &key)
+(defmethod glass:accept-security-context ((context kerberos-context) buffer &key)
   (let ((ap-req (unpack-initial-context-token buffer)))
     (setf (kerberos-context-req context) 
 	  (valid-ticket-p (kerberos-context-creds context) ap-req)
@@ -106,12 +89,8 @@ c.f. GSS_Accept_sec_context
 
 ;; ------------------ per-message calls --------------------------
 
-
-;; Get_MIC()
-(defgeneric gss-get-mic (context message &key))
-
 ;; the context handle MUST be the kdc-rep i.e. the "credentials" that were passed into the initialize-context
-(defmethod gss-get-mic ((context kerberos-context) message &key)
+(defmethod glass:get-mic ((context kerberos-context) message &key)
   (let* ((req (kerberos-context-req context))
 	 (session-key (kerberos-context-key context))
 	 (key (subseq (encryption-key-value session-key) 0 8))
@@ -146,10 +125,7 @@ c.f. GSS_Accept_sec_context
 	 ;; write the checksum 
 	 (write-sequence cksum s))))))
   
-;; GSS_VerifyMIC()
-(defgeneric gss-verify-mic (context message message-token &key))
-
-(defmethod gss-verify-mic ((context kerberos-context) message message-token &key initiator)
+(defmethod glass:verify-mic ((context kerberos-context) message message-token &key initiator)
   (let* ((req (kerberos-context-req context))
 	 (tok (unpack-initial-context-token message-token))
 	 (session-key (ap-req-session-key req))
@@ -171,12 +147,8 @@ c.f. GSS_Accept_sec_context
 			      v)
 			    (if (not initiator) '(0 0 0 0) '(#xff #xff #xff #xff))))))))
 
-
-;; ;; GSS_Wrap()
-(defgeneric gss-wrap (context message &key))
-
 ;; context handle is the ap-req 
-(defmethod gss-wrap ((context kerberos-context) message &key)   
+(defmethod glass:wrap ((context kerberos-context) message &key)   
   (let* ((req (kerberos-context-req context))
 	 (session-key (subseq (encryption-key-value (kerberos-context-key context))
 			      0 8))
@@ -219,11 +191,7 @@ c.f. GSS_Accept_sec_context
        ;; encrypted body
        (write-sequence (encrypt-des-cbc key msg) s))))))
 
-
-;; ;; GSS_Unwrap()
-(defgeneric gss-unwrap (context-handle buffer &key))
-
-(defmethod gss-unwrap ((context kerberos-context) buffer &key)
+(defmethod glass:unwrap ((context kerberos-context) buffer &key)
   ;; start by extracting the token from the buffer
   (let* ((tok (unpack-initial-context-token buffer))
 	 (req (kerberos-context-req context))
