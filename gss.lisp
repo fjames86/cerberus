@@ -31,8 +31,8 @@
    (seqno :initform 0 :accessor kerberos-context-seqno)
    (initiator :initform nil :initarg :initiator :accessor kerberos-context-initiator)))
 
-(defmethod glass:acquire-credential ((mech-type (eql :kerberos)) principal 
-				   &key username password realm kdc-address till-time)
+(defmethod glass:acquire-credential ((mech-type (eql :kerberos)) 
+				     &key principal username password realm kdc-address till-time)
   (cond
     ((and kdc-address username password realm)
      ;; client logging into the domain
