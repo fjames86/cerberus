@@ -258,7 +258,7 @@ Returns a KDC-REP structure."
 ;; next stage: need to package up an AP-REQ to be sent to the application server
 ;; typically this message will be encapsualted in the application protocol, so we don't do any direct 
 ;; networking for this, just return a packed octet buffer
-(defun make-ap-request (credentials &key mutual)
+(defun make-ap-request (credentials &key mutual seqno checksum)
   (declare (type kdc-rep credentials))
   (let ((ticket (kdc-rep-ticket credentials))
 	(cname (kdc-rep-cname credentials))
@@ -271,7 +271,9 @@ Returns a KDC-REP structure."
 				     (make-authenticator :crealm (ticket-realm ticket)
 							 :cname cname
 							 :ctime (get-universal-time)
-							 :cusec 0))
+							 :cusec 0
+							 :seqno seqno
+							 :cksum checksum))
 			       (encryption-key-value key)
 			       :usage :ap-req))))
 

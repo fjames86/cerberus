@@ -26,7 +26,7 @@
 	   #:unpack-initial-context-token
 	   
 	   ;; the "GSS" compatible API 
-	   #:gss-acquire-credentials
+	   #:gss-acquire-credential
 	   #:gss-initialize-security-context
 	   #:gss-accept-security-context 
 	   #:gss-get-mic 

@@ -7,40 +7,85 @@
 
 (in-package #:cerberus)
 
-;; ----------- for the client ---------------
+;; -------------------- for everyone ------------
+;; everyone calls this, but the semantics are different if you are a server or client 
 
 (defgeneric gss-acquire-credential (mech-type principal &key)
-  (:documentation "Acquire credentials for the principal named. Returns CREDENTIALS, for input into INITIALIZE-SECURITY-CONTEXT. c.f. GSS_Acquire_cred."))
+  (:documentation "Acquire credentials for the principal named. Returns CREDENTIALS, for input into INITIALIZE-SECURITY-CONTEXT. c.f. GSS_Acquire_cred.
 
-(defmethod gss-acquire-credential ((mech-type (eql :kerberos)) principal &key username password realm kdc-address till-time)
-  (let ((tgt (if (and username password kdc-address)
-		 (request-tgt username password realm 
+MECH-TYPE ::= symbol naming the authentication mechamism
+PRINCIPAL ::= the security principal you are requesting credentials for.
+"))
+
+(defclass kerberos-context ()
+  ((creds :initarg :creds :initform nil :accessor kerberos-context-creds)
+   (req :initarg :req :initform nil :accessor kerberos-context-req)
+   (buffer :initform nil :initarg :buffer :accessor kerberos-context-buffer)
+   (key :initform nil :accessor kerberos-context-key)
+   (seqno :initform 0 :accessor kerberos-context-seqno)
+   (initiator :initform nil :initarg :initiator :accessor kerberos-context-initiator)))
+
+(defmethod gss-acquire-credential ((mech-type (eql :kerberos)) principal 
+				   &key username password realm kdc-address till-time)
+  (cond
+    ((and kdc-address username password realm)
+     ;; client logging into the domain
+     (let ((tgt (request-tgt username password realm 
 			      :kdc-address kdc-address
-			      :till-time till-time)
-		 (find-if (lambda (tgt)
-			    (string= (login-token-realm tgt) realm))
-			  *tgt-cache*))))
-    (unless tgt (error "No TGT for the specified user, login by providing user credentials."))
-    (request-credentials tgt principal :till-time till-time)))
+			      :till-time till-time)))
+       (let ((creds (request-credentials tgt principal :till-time till-time)))
+	 (make-instance 'kerberos-context
+			:creds creds
+			:initiator t))))
+    ((and (not kdc-address) username password realm)
+     ;; application server generatigna keylist
+     (make-instance 'kerberos-context
+		    :creds (generate-keylist username password realm)))
+    (realm
+     ;; try to get a tgt we already have
+     (let ((tgt (find-if (lambda (tgt)
+			   (string= (login-token-realm tgt) realm))
+			 *tgt-cache*)))
+       (unless tgt (error "No TGT for the specified user, login by providing user credentials."))
+       (let ((creds (request-credentials tgt principal :till-time till-time)))
+	 (make-instance 'kerberos-context
+			:creds creds
+			:initiator t))))
+    (t (error "must provide a realm"))))
 
-(defgeneric gss-initialize-security-context (mech-type credentials &key)
+;; ----------- for the client ---------------
+      
+(defgeneric gss-initialize-security-context (context &key)
   (:documentation "Returns a security context to be sent to the application server. c.f. GSS_Init_sec_context"))
 
-(defmethod gss-initialize-security-context ((mech-type (eql :kerberos)) credentials &key mutual)
-  (pack-initial-context-token (make-ap-request credentials :mutual mutual)))
-
+(defmethod gss-initialize-security-context ((context kerberos-context) &key mutual)
+  (let* ((req (make-ap-request (kerberos-context-creds context) 
+			       :mutual mutual
+			       :seqno (kerberos-context-seqno context))) ;; FIXME: also need the checksum!
+	 (buffer (pack-initial-context-token req)))
+    (setf (kerberos-context-req context) req
+	  (kerberos-context-buffer context) buffer
+	  (kerberos-context-key context)
+	  ;; the session key can be found in the crednetials (which is a kdc-rep)
+	  (enc-kdc-rep-part-key (kdc-rep-enc-part (kerberos-context-creds context))))
+    buffer))
+	  
 ;; ---------- for the application server -----------
 
-(defgeneric gss-accept-security-context (mech-type credentials context &key)
+(defgeneric gss-accept-security-context (context buffer &key)
   (:documentation "CREDENTIALS are credentials for the server principal. CONTEXT is the packed 
 buffer sent from the client. It should be as returned from INITIALIZE-SECURITY-CONTEXT.
 
 c.f. GSS_Accept_sec_context
 "))
 
-(defmethod gss-accept-security-context ((mech-type (eql :kerberos)) credentials context &key)
-  (let ((ap-req (unpack-initial-context-token context)))
-    (valid-ticket-p credentials ap-req)))
+(defmethod gss-accept-security-context ((context kerberos-context) buffer &key)
+  (let ((ap-req (unpack-initial-context-token buffer)))
+    (setf (kerberos-context-req context) 
+	  (valid-ticket-p (kerberos-context-creds context) ap-req)
+	  (kerberos-context-key context) 
+	  (enc-ticket-part-key (ticket-enc-part (ap-req-ticket ap-req))))
+    context))
 
 ;; this is for context deletion, do we need it?
 ;;(defgeneric gss-process-context-token (mech-type context &key)
@@ -50,13 +95,14 @@ c.f. GSS_Accept_sec_context
 ;; ------------------ per-message calls --------------------------
 
 ;; Get_MIC()
-(defgeneric gss-get-mic (mech-type context-handle message &key))
+(defgeneric gss-get-mic (context message &key))
 
 ;; the context handle MUST be the kdc-rep i.e. the "credentials" that were passed into the initialize-context
-(defmethod gss-get-mic ((mech-type (eql :kerberos)) context-handle message &key initiator)
-  (declare (type ap-req context-handle))
-  (let ((req context-handle)
-	(session-key (ap-req-session-key context-handle)))
+(defmethod gss-get-mic ((context kerberos-context) message &key)
+  (let* ((req (kerberos-context-req context))
+	 (session-key (kerberos-context-key context))
+	 (key (subseq (encryption-key-value session-key) 0 8))
+	 (initiator (kerberos-context-initiator context)))
     (pack-initial-context-token 
      (flexi-streams:with-output-to-sequence (s)
        (write-sequence '(1 1) s) ;; TOK_ID == getmic
@@ -65,17 +111,21 @@ c.f. GSS_Accept_sec_context
        
        (let ((cksum (des-mac (md5 message)
 			     nil
-			     session-key))) ;;(enc-kdc-rep-part-key (kdc-rep-enc-part rep)))))
+			     key))) 
 	 
 	 ;; write the ap-req seqno
-	 (let ((seqno (authenticator-seqno (ap-req-authenticator req))))
+	 (let ((seqno (if (kerberos-context-initiator context)
+			  ;; we are the client, we store our own seqno
+			  (kerberos-context-seqno context)
+			  ;; the seqno can be found in the authenticator 
+			  (authenticator-seqno (ap-req-authenticator req)))))
 	   (unless seqno (error "Seqno is mandatory for GSS"))
 	   (let ((bytes (concatenate '(vector (unsigned-byte 8)) 
 				     (let ((v (nibbles:make-octet-vector 4)))
 				       (setf (nibbles:ub32ref/be v 0) seqno)
 				       v)
 				     (if initiator '(0 0 0 0) '(#xff #xff #xff #xff)))))
-	     (write-sequence (encrypt-des-cbc session-key ;;(enc-kdc-rep-part-key (kdc-rep-enc-part context-handle)) 
+	     (write-sequence (encrypt-des-cbc key 
 					      bytes
 					      :initialization-vector (subseq cksum 0 8))
 			     s)))
@@ -83,36 +133,38 @@ c.f. GSS_Accept_sec_context
 	 (write-sequence cksum s))))))
   
 ;; GSS_VerifyMIC()
-(defgeneric gss-verify-mic (mech-type context-handle message message-token &key))
+(defgeneric gss-verify-mic (context message message-token &key))
 
-(defmethod gss-verify-mic ((mech-type (eql :kerberos)) context-handle message message-token &key initiator)
-  (declare (type ap-req context-handle))
-  (let ((req context-handle)
-	(tok (unpack-initial-context-token message-token))
-	(session-key (ap-req-session-key context-handle)))
+(defmethod gss-verify-mic ((context kerberos-context) message message-token &key initiator)
+  (let* ((req (kerberos-context-req context))
+	 (tok (unpack-initial-context-token message-token))
+	 (session-key (ap-req-session-key req))
+	 (key (subseq (encryption-key-value session-key) 0 8)))
     ;; start by getting the checksum and seqno fields
     (let ((seqno (subseq tok 8 16))
 	  (cksum (subseq tok 16 24))
-	  (the-cksum (des-mac (md5 message) nil session-key)))
+	  (the-cksum (des-mac (md5 message) nil key)))
       ;; compare the checksums
       (unless (equalp cksum the-cksum) (error 'checksum-error))
       ;; decrypt the seqno
-      (let ((sq (decrypt-des-cbc session-key seqno :initialization-vector (subseq the-cksum 0 8))))
+      (let ((sq (decrypt-des-cbc key seqno :initialization-vector (subseq the-cksum 0 8))))
 	(every #'= 
 	       sq 
 	       (concatenate '(vector (unsigned-byte 8)) 
-			    (authenticator-seqno (ap-req-authenticator req)) 
-			    (if initiator '(0 0 0 0) '(#xff #xff #xff #xff))))))))
+			    (let ((v (nibbles:make-octet-vector 4)))
+			      (setf (nibbles:ub32ref/be v 0) (authenticator-seqno (ap-req-authenticator req)))
+			      v)
+			    (if (not initiator) '(0 0 0 0) '(#xff #xff #xff #xff))))))))
 
 
 ;; ;; GSS_Wrap()
-(defgeneric gss-wrap (mech-type context-handle message &key))
+(defgeneric gss-wrap (context message &key))
 
 ;; context handle is the ap-req 
-(defmethod gss-wrap ((mech-type (eql :kerberos)) context-handle message &key initiator)   
-  (declare (type ap-req context-handle))
-  (let ((req context-handle)
-	(session-key (ap-req-session-key context-handle)))
+(defmethod gss-wrap ((context kerberos-context) message &key)   
+  (let* ((req (kerberos-context-req context))
+	 (session-key (ap-req-session-key req))
+	 (initiator (kerberos-context-initiator context)))
     ;; start by padding the message
     (let* ((len (length message))
 	   (msg (concatenate '(vector (unsigned-byte 8))
@@ -129,8 +181,10 @@ c.f. GSS_Accept_sec_context
 	   (seqno (encrypt-des-cbc session-key 
 				   (concatenate '(vector (unsigned-byte 8)) 
 						(let ((v (nibbles:make-octet-vector 4)))
-						  (setf (nibbles:ub32ref/be v 0) 
-							(authenticator-seqno (ap-req-authenticator req)))
+						  (setf (nibbles:ub32ref/be v 0)
+							(if initiator
+							    (kerberos-context-seqno context)
+							    (authenticator-seqno (ap-req-authenticator req))))
 						  v)
 						(if initiator '(0 0 0 0) '(#xff #xff #xff #xff)))
 				   :initialization-vector (subseq cksum 0 8))))
@@ -150,14 +204,14 @@ c.f. GSS_Accept_sec_context
 
 
 ;; ;; GSS_Unwrap()
-(defgeneric gss-unwrap (mech-type context-handle buffer &key))
+(defgeneric gss-unwrap (context-handle buffer &key))
 
-(defmethod gss-unwrap ((mech-type (eql :kerberos)) context-handle buffer &key initiator)
+(defmethod gss-unwrap ((context kerberos-context) buffer &key)
   ;; start by extracting the token from the buffer
-  (declare (type ap-req context-handle))
-  (let ((tok (unpack-initial-context-token buffer))
-	(req context-handle)
-	(session-key (ap-req-session-key context-handle)))
+  (let* ((tok (unpack-initial-context-token buffer))
+	 (req (kerberos-context-req context))
+	 (session-key (ap-req-session-key req))
+	 (initiator (kerberos-context-initiator context)))
     ;; get the seqno, cksum and encrypted body
     (let ((eseqno (subseq tok 8 16))
 	  (cksum (subseq tok 16 24))
@@ -183,7 +237,9 @@ c.f. GSS_Accept_sec_context
 			    (concatenate '(vector (unsigned-byte 8))
 					 (let ((v (nibbles:make-octet-vector 4)))
 					   (setf (nibbles:ub32ref/be v 0) 
-						 (authenticator-seqno (ap-req-authenticator req)))
+						 (if initiator
+						     (kerberos-context-seqno context)
+						     (authenticator-seqno (ap-req-authenticator req))))
 					   v)
 					 (if initiator '(0 0 0 0) '(#xff #xff #xff #xff))))
 	      (error "Seqnos don't match"))))

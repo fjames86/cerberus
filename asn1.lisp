@@ -1139,7 +1139,7 @@
   (vno asn1-integer :initial-value 5 :tag 0)
   (crealm realm :tag 1)
   (cname principal-name :tag 2)
-  (cksum checksum :tag 3 :optional t) ;; optional
+  (cksum check-sum :tag 3 :optional t) ;; optional
   (cusec microseconds :tag 4)  
   (ctime kerberos-time :tag 5)
   (subkey encryption-key :tag 6 :optional t) ;; optional
@@ -1306,7 +1306,7 @@
   ((stream values) (encode-sequence-of stream 'etype-info2-entry values)))
 
 (defsequence ad-kdc-issued ()
-  (cksum checksum :tag 0)
+  (cksum check-sum :tag 0)
   (irealm realm :tag 1 :optional t) ;; op
   (iname principal-name :tag 2 :optional t) ;; op
   (elements authorization-data :tag 3))
@@ -1354,23 +1354,26 @@
   (decode-identifier stream) ;; tag=0, class=application
   (decode-length stream)
   (decode-identifier stream) ;; tag=16, class=universal
-  (let ((len (decode-length stream)))
-    ;; contents
-    (decode-oid stream) ;; FIXME: dispatch depending on the OID. It is possible to be wrapped in multiple OIDs 
-    (let ((id (nibbles:make-octet-vector 2)))
-      (read-sequence id stream)
-      (if (= (aref id 1) 0)
-	  (ecase (aref id 0)
-	    (01 (decode-ap-req stream))
-	    (02 (decode-ap-rep stream))
-	    (03 (decode-krb-error stream)))
-	  ;; we are given the length rest of stream contains the token, i.e. read until the end of the stream
-	  ;; don't forget to put the TOK_ID back at the start 
-	  (concatenate '(vector (unsigned-byte 8))
-		       id 
-		       (flexi-streams:with-output-to-sequence (s)
-			 (do ((i 0 (1+ i))
-			      (b (read-byte stream) (read-byte stream)))
-			     ((= b len))
-			   (write-byte b s))))))))
+  (let* ((len (decode-length stream))
+	 (bytes (nibbles:make-octet-vector len)))
+    (read-sequence bytes stream)
+    (flexi-streams:with-input-from-sequence (s bytes)
+      ;; contents
+      (decode-oid s) ;; FIXME: dispatch depending on the OID. It is possible to be wrapped in multiple OIDs 
+      (let ((id (nibbles:make-octet-vector 2)))
+	(read-sequence id s)
+	(if (= (aref id 1) 0)
+	    (ecase (aref id 0)
+	      (01 (decode-ap-req s))
+	      (02 (decode-ap-rep s))
+	      (03 (decode-krb-error s)))
+	    ;; we are given the length rest of stream contains the token, i.e. read until the end of the stream
+	    ;; don't forget to put the TOK_ID back at the start 
+	    (concatenate '(vector (unsigned-byte 8))
+			 id 
+			 (flexi-streams:with-output-to-sequence (out)
+			   (do ((i (file-position s) (1+ i))
+				(b (read-byte s nil nil) (read-byte s nil nil)))
+			       ((or (null b) (= i len)))
+			     (write-byte b out)))))))))
   
