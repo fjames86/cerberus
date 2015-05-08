@@ -7,6 +7,19 @@
 
 (in-package #:cerberus)
 
+
+;; gss requires us to encode a structure to put into the checksum of the authenticator 
+;; the checksum type is #x8003 (see rfc1964 sec 1.1.1)
+;; (defun encode-gss-checksum ()
+;;   (flexi-streams:with-output-to-sequence (s)
+;;     (nibbles:write-ub32/le 16 s) ;; length of bind field
+;;     ;; md5 hash of channel bindings
+;;     ;; flags
+
+    
+
+
+
 ;; -------------------- for everyone ------------
 ;; everyone calls this, but the semantics are different if you are a server or client 
 
@@ -91,8 +104,8 @@ c.f. GSS_Accept_sec_context
 ;;(defgeneric gss-process-context-token (mech-type context &key)
 ;;  (:documentation "CONTEXT is returned from ACCEPT-SECURITY-CONTEXT. c.f. GSS_Process_context_token"))
 
-
 ;; ------------------ per-message calls --------------------------
+
 
 ;; Get_MIC()
 (defgeneric gss-get-mic (context message &key))

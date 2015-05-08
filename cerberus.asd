@@ -11,7 +11,7 @@
    (:file "asn1" :depends-on ("package"))
    (:file "messages" :depends-on ("asn1"))
    (:file "encryption" :depends-on ("messages" "errors"))
-   (:file "checksums" :depends-on ("encryption"))
+;;   (:file "checksums" :depends-on ("encryption"))
    (:file "ciphers" :depends-on ("checksums" "errors"))
    (:file "errors" :depends-on ("package"))
    (:file "preauth" :depends-on ("asn1" "ciphers"))
