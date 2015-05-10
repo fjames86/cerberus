@@ -31,12 +31,12 @@ Microsoft.
 - [x] Encode/decode AP-REQ messages to send to applicaiton servers
 - [x] Validate AP-REQ messages to authenticate clients
 - [x] Wrap AP-REQ messages with the KRB5 OID, as required for GSS
-- [ ] Some sort of GSSAPI integration? 
+- [x] Some sort of GSSAPI integration.
 - [ ] Long term aim: write a KDC server
 
 ## 3. Usage
-The public API is not finalized yet, but at the moment you can do something like:
 
+Cerberus provides an API to the "raw" Kerberos protocol, e.g.
 ```
 ;; client logs in to the AS and requests a TGT
 CL-USER> (defparameter *tgt* (cerberus:request-tgt "Administrator" "password" "REALM" :kdc-address "10.1.1.1"))
@@ -61,14 +61,11 @@ T
 
 ```
 
+However, users typically require interacting with a "GSS" layer which wraps the details of Kerberos. The cerberus
+package defines methods for the generic functions exported from the [glass](https://github.com/fjames86/glass) package. 
+
 ## 4. Encryption profiles
 Cerberus supports a set of encryption "profiles", which are implemented by specializing a set of generic functions.
-Currently, it has support for the following: 
-* DES-CBC-MD5, DES-CBC-MD4, DES-CBC-CRC
-* DES3-CBC-SHA1-KD
-* RC4-HMAC, RC4-HMAC-EXP
-* AES128-CTS-HMAC-SHA1-KD, AES256-CTS-HMAC-SHA1-KD. 
-
 
 - [x] The simple DES-based profiles are all implemented and appear to be working, DES-CBC-MD5, DES-CBC-MD4 and DES-CBC-CRC.
 - [x] The Microsoft profiles, RC4-HMAC and RC4-HMAC-EXP appear to be working correctly. 
@@ -85,9 +82,9 @@ encryption key.
 
 ## 6. TODO
 - [ ] Need to be able to renew tickets.
-- [ ] Somehow need to be able to use this in an application that requires GSS support.
+- [x] Somehow need to be able to use this in an application that requires GSS support.
 - [x] Need to support encrypting application messages using the session key.
-- [ ] Some sort of credential cache, i.e. database of TGTs and tickets for other principals
+- [x] Some sort of credential cache, i.e. database of TGTs and tickets for other principals
 - [ ] Support cross-realm requests and tickets
 
 ## 7. Notes
@@ -97,7 +94,6 @@ in the context of Kerberos messages, but are not generally applicable. Perhaps i
 * This was developed and tested against the Windows KDC (i.e. active directory). It should work with other KDCs such as MIT and Heimdal, 
 but I've not tried.
 * Need to understand the MS-PAC structures, these contain authorization data that is likely to be very useful. 
-* GSSAPI structures look simpler than I thought -- maybe just wrapping an InitialContextToken with an OID?
 
 ## 8. License
 Licensed under the terms of the MIT license.
