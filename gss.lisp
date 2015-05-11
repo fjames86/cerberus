@@ -32,7 +32,7 @@
    (initiator :initform nil :initarg :initiator :accessor kerberos-context-initiator)))
 
 (defmethod glass:acquire-credential ((mech-type (eql :kerberos)) 
-				     &key principal username password realm kdc-address till-time)
+				     &key principal username password realm kdc-address till-time keylist)
   (cond
     ((and kdc-address username password realm)
      ;; client logging into the domain
@@ -47,6 +47,10 @@
      ;; application server generatigna keylist
      (make-instance 'kerberos-context
 		    :creds (generate-keylist username password realm)))
+    (keylist 
+     ;; application server providing keylist
+     (make-instance 'kerberos-context 
+                    :creds keylist))
     (realm
      ;; try to get a tgt we already have
      (let ((tgt (find-if (lambda (tgt)
@@ -77,11 +81,14 @@
 
 (defmethod glass:accept-security-context ((context kerberos-context) buffer &key)
   (let ((ap-req (unpack-initial-context-token buffer)))
-    (setf (kerberos-context-req context) 
-	  (valid-ticket-p (kerberos-context-creds context) ap-req)
-	  (kerberos-context-key context) 
-	  (enc-ticket-part-key (ticket-enc-part (ap-req-ticket ap-req))))
-    context))
+    (let ((cxt 
+           (make-instance 'kerberos-context 
+                          :buffer buffer
+                          :creds (kerberos-context-creds context)
+                          :req (valid-ticket-p (kerberos-context-creds context) ap-req))))
+    (setf (kerberos-context-key context) 
+          (enc-ticket-part-key (ticket-enc-part (ap-req-ticket ap-req))))
+    cxt)))
 
 ;; this is for context deletion, do we need it?
 ;;(defgeneric gss-process-context-token (mech-type context &key)
