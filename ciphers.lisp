@@ -200,7 +200,7 @@
 ;; the RC4-HMAC profile, needed for Windows
 
 (defprofile :rc4-hmac)
-(defprofile :rc4-hmac-exp) 
+;;(defprofile :rc4-hmac-exp) ;; the export version doesn't seem to be working correctly
 
 (defmethod profile-block-size ((type (eql :rc4-hmac))) 1)
 (defmethod profile-key-seed-length ((type (eql :rc4-hmac))) 1) ;; ???

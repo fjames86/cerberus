@@ -68,7 +68,7 @@ package defines methods for the generic functions exported from the [glass](http
 Cerberus supports a set of encryption "profiles", which are implemented by specializing a set of generic functions.
 
 - [x] The simple DES-based profiles are all implemented and appear to be working, DES-CBC-MD5, DES-CBC-MD4 and DES-CBC-CRC.
-- [x] The Microsoft profiles, RC4-HMAC and RC4-HMAC-EXP appear to be working correctly. 
+- [x] The Microsoft profile RC4-HMAC is working correctly. RC4-HMAC-EXP has an unknown problem and is not working correctly.
 - [x] The triple-des profile, DES3-CBC-SHA1-KD, is implemented and looks like it's working. 
 - [x] The AES128 and AES256 profiles are working correctly.
 

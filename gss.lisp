@@ -86,7 +86,7 @@
                           :buffer buffer
                           :creds (kerberos-context-creds context)
                           :req (valid-ticket-p (kerberos-context-creds context) ap-req))))
-    (setf (kerberos-context-key context) 
+    (setf (kerberos-context-key cxt) 
           (enc-ticket-part-key (ticket-enc-part (ap-req-ticket ap-req))))
     cxt)))
 
