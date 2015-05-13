@@ -156,10 +156,6 @@ ETYPE ::= encryption profile name to use for pre-authentication.
 	(push tgt *tgt-cache*)
 	tgt))))
 
-(defun join-domain (realm kdc-address)
-  (setf *kdc-address* kdc-address
-	*default-realm* realm))
-
 (defun login-user (username password &key realm kdc-address)
   (request-tgt username password 
 	       (or realm *default-realm*)

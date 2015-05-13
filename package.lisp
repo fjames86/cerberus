@@ -12,6 +12,8 @@
 	   
 	   ;; general utilities
 	   #:principal
+	   #:string-principal
+	   #:principal-string
 	   #:make-ap-request
 	   #:valid-ticket-p
 	   #:make-host-address

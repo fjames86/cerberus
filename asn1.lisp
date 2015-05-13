@@ -471,7 +471,13 @@
 	      (t 
 	       (setf num (logior (ash num 7) 
 				 (logand b #x7f))))))))))))
-	
+
+(defun oid-eql (oid1 oid2)
+  (every #'= oid1 oid2))
+
+(defun kerberos-oid-p (oid)
+  (oid-eql oid *kerberos-oid*))
+
 ;; ----------------------------
 
 (defun encode-sequence-of (stream type values &key (tag 16) (class :universal) (primitive nil))
@@ -1362,7 +1368,9 @@
     (read-sequence bytes stream)
     (flexi-streams:with-input-from-sequence (s bytes)
       ;; contents
-      (decode-oid s) ;; FIXME: dispatch depending on the OID. It is possible to be wrapped in multiple OIDs 
+      (let ((oid (decode-oid s))) ;; FIXME: dispatch depending on the OID. It is possible to be wrapped in multiple OIDs 
+	(unless (kerberos-oid-p oid)
+	  (error "Token OID ~S not Kerberos" oid)))
       (let ((id (nibbles:make-octet-vector 2)))
 	(read-sequence id s)
 	(if (= (aref id 1) 0)

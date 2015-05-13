@@ -1,23 +1,25 @@
 # cerberus
 A Kerberos (version 5) implementation.
 
-This is an implementation of the Kerberos v5 authentication protocol, entirely in Common Lisp. 
+This is an implementation of the Kerberos v5 authentication protocol in Common Lisp. The intention is to provide 
+a robust, reliable and portable (across both Lisp implementations and host OSs) Kerberos authentication system. 
+It has been developed/tested against the Windows KDC (i.e. active directory) running on SBCL under both Windows and Linux.
 
 ## 1. Introduction
 Kerberos is the de facto standard method of authentication over a network, notably in Microsoft Windows environments.
 
 The basic principal of Kerberos is there is a trusted central authority which stores credentials (password equivalents)
-for each principal (user account). This is knowns as the Key Distribution Centre (KDC). 
+for each principal (user account). This is known as the Key Distribution Centre (KDC). 
 A client can prove its identity to an application server by requesting a message from the KDC 
 which is encrypted with the server's private key. Only the server (and the KDC) have the knowledge to decrypt this message,
 the client itself does not. The client forwards this message to the server, who decrypts it and examines 
 the contents of the message. Inside it will be some proof (e.g. a recent timestamp) that the client is who they say they are. 
 
 In its simplest form, the Kerberos protocol consists of the following sequence of exchanges:
-* Client sends a message to authentication service component of the KDC requesting a ticket for the ticket-granting server (TGS)
+* Client sends a message to authentication server (AS) component of the KDC requesting a ticket for the ticket-granting server (TGS).
 * The AS responds with a message encrypted with the client's private key, only the client can decrypt this message.
-* The client sends a request to the TGS for a ticket to the desired principal (application server).
-* The client sends this ticket to the application server using the relevant application protocol. 
+* The client sends a request to the TGS for a ticket for the desired principal (application server).
+* The client sends this ticket to the application server using the relevant application protocol.
 * The application server validates the ticket and approves access to the client.
 
 The details get more complicated, but that is the general idea.
@@ -28,10 +30,10 @@ The details get more complicated, but that is the general idea.
 Microsoft. 
 - [x] Send AS-REQ messages to the KDC to get TGTs 
 - [x] Send TGS-REQ messages to the KDC to get credentials for application servers
-- [x] Encode/decode AP-REQ messages to send to applicaiton servers
+- [x] Encode/decode AP-REQ messages to send to application servers
 - [x] Validate AP-REQ messages to authenticate clients
 - [x] Wrap AP-REQ messages with the KRB5 OID, as required for GSS
-- [x] Some sort of GSSAPI integration.
+- [x] Some sort of GSSAPI integration (sort of there, some polishing required)
 - [ ] Long term aim: write a KDC server
 
 ## 3. Usage
@@ -63,12 +65,14 @@ T
 
 However, users typically require interacting with a "GSS" layer which wraps the details of Kerberos. The cerberus
 package defines methods for the generic functions exported from the [glass](https://github.com/fjames86/glass) package. 
+This is actually how the API is typically consumed.
 
 ## 4. Encryption profiles
 Cerberus supports a set of encryption "profiles", which are implemented by specializing a set of generic functions.
 
 - [x] The simple DES-based profiles are all implemented and appear to be working, DES-CBC-MD5, DES-CBC-MD4 and DES-CBC-CRC.
 - [x] The Microsoft profile RC4-HMAC is working correctly. RC4-HMAC-EXP has an unknown problem and is not working correctly.
+It has temporarily been disabled.
 - [x] The triple-des profile, DES3-CBC-SHA1-KD, is implemented and looks like it's working. 
 - [x] The AES128 and AES256 profiles are working correctly.
 
@@ -77,15 +81,17 @@ You can load keytab files (as output from other Kerberos implementations, such f
 ```
 CL-USER> (cerberus:load-keytab "my.keytab")
 ```
-This returns a list of KEYTAB-ENTRY structures, which include informtaion about the principal as well as the 
+This returns a list of KEYTAB-ENTRY structures, which include information about the principal as well as the 
 encryption key. 
 
 ## 6. TODO
-- [ ] Need to be able to renew tickets.
+- [ ] Need to be able to renew tickets (written the fn, does it work?)
 - [x] Somehow need to be able to use this in an application that requires GSS support.
-- [x] Need to support encrypting application messages using the session key.
-- [x] Some sort of credential cache, i.e. database of TGTs and tickets for other principals
-- [ ] Support cross-realm requests and tickets
+- [x] Need to support encrypting application messages using the (sub)session key.
+- [x] Some sort of credential cache, i.e. database of TGTs and tickets for other principals.
+- [ ] Support cross-realm requests and tickets.
+- [ ] Need to support sub-session keys. At the moment it is assumed only the session key is available.
+
 
 ## 7. Notes
 * Encryption functions provided by the ironclad package.

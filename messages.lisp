@@ -5,9 +5,17 @@
 (in-package #:cerberus)
 
 (defun principal (name &key instance (type :principal))
+  "Allocate a PRINCIPAL structure.
+ 
+NAME ::= the primary name of the principal
+INSTANCE ::= optional instance name of the principal
+TYPE ::= the type of the principal. Typical uses only require PRINCIPAL, SRV-HOST or SRV-INST.
+"
   (make-principal-name :type type 
 		       :name (append (list name) 
-				     (when instance (list instance)))))
+				     (cond
+				       ((listp instance) instance)
+				       ((atom instance) (list instance))))))
 
 (defun krbtgt-principal (realm)
   (principal "krbtgt" 
@@ -54,24 +62,32 @@
 					      :cipher octets)))
 
 
-(defun principal-string (names &optional realm)
+(defun principal-string (principal &optional realm)
   "Converts a list of names and a realm into a principal name string. 
 
 Return ::= Each/Name@Realm
 "
-  (with-output-to-string (s)
-    (let ((done nil))
-      (dolist (name (etypecase names
-		      (list names)
-		      (string (list names))))
-	(when done (format s "/"))
-	(format s "~A" name)
-	(setf done t)))
-    (when realm
-      (format s "@~A" realm))))
+  (declare (type principal-name principal))
+  (let ((names (principal-name-name principal)))
+    (with-output-to-string (s)
+      (let ((done nil))
+	(dolist (name (etypecase names
+			(list names)
+			(string (list names))))
+	  (when done (format s "/"))
+	  (format s "~A" name)
+	  (setf done t)))
+      (when realm
+	(format s "@~A" realm)))))
 
 (defun string-principal (string)
-  "Parses a principal name string. Returns (values names realm)."
+  "Parses a principal name string. 
+
+STRING ::= the string form of the principal, the/name/list@realm.
+
+Returns (values principal realm).
+"
+  (declare (type string string))
   (let ((pos 0)
 	(len (length string))
 	(names nil)
@@ -80,9 +96,11 @@ Return ::= Each/Name@Realm
 	((or (= i len) (char= (char string i) #\@))
 	 (push (subseq string pos i) names)
 	 (setf pos i))
-      (when (char= (char string i) #\/)
+      (when (member (char string i) '(#\/ #\.) :test #'char=)
 	(push (subseq string pos i) names)
 	(setf pos (1+ i))))
     (when (< pos len)
       (setf realm (subseq string (1+ pos))))
-    (values (reverse names) realm)))
+    (values (make-principal-name :name (reverse names)
+				 :type :principal)
+	    realm)))
