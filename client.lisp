@@ -83,6 +83,9 @@
 (defvar *kdc-address* nil 
   "The address of the default KDC.")
 
+(defvar *default-realm* nil
+  "The name of the default realm.")
+
 (defvar *tgt-cache* nil)
 
 (defun find-tgt (principal realm)
@@ -110,6 +113,13 @@ ETYPE ::= encryption profile name to use for pre-authentication.
      (setf *kdc-address* kdc-address))
     ((not *kdc-address*) (error "Must first set *kdc-address*"))
     (t (setf kdc-address *kdc-address*)))
+  (cond 
+    ((and realm (not *default-realm*))
+     (setf *default-realm* realm))
+    ((and *default-realm* (not realm))
+     (setf realm *default-realm*))
+    (t (error "Must specify a realm if not set default.")))
+     
   (let ((key (string-to-key etype
                             password
                             (format nil "~A~A" (string-upcase realm) username)))
@@ -146,7 +156,18 @@ ETYPE ::= encryption profile name to use for pre-authentication.
 	(push tgt *tgt-cache*)
 	tgt))))
 
-(defvar *credential-cache* nil)
+(defun join-domain (realm kdc-address)
+  (setf *kdc-address* kdc-address
+	*default-realm* realm))
+
+(defun login-user (username password &key realm kdc-address)
+  (request-tgt username password 
+	       (or realm *default-realm*)
+	       :kdc-address (or kdc-address *kdc-address*)))
+
+(defvar *credential-cache* nil
+  "List of tickets that have previously been granted. REQUEST-CREDENTIALS will return an
+applicable ticket from this list if one is available.")
 
 (defun find-credentials (principal realm)
   (find-if (lambda (cred)

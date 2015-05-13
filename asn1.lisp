@@ -165,6 +165,12 @@
        (write-byte (logior (length octets) #x80) stream)
        (write-sequence octets stream)))))
 
+;; we need to put a maximum length on the decoded length because otherwise
+;; we might end up attempting to allocate a silly amount, exhausting the heap
+;; and potentially killing us. 
+(defconstant +silly-length+ (* 50 1024 1024)
+  "Maximum length allowed to be decoded.")
+
 (defun decode-length (stream)
   (let ((first (read-byte stream)))
     (cond
@@ -174,7 +180,10 @@
        ;; the first octet is the number of octets|#x80
        (do ((n (logand first (lognot #x80)) (1- n))
             (len 0))
-           ((zerop n) len)
+           ((zerop n) 
+	    (prog1 len
+	      (when (> len +silly-length+)
+		(error "A silly length of ~D was decoded" len))))
          (let ((byte (read-byte stream)))
            (setf len (logior (ash len 8) byte))))))))
 
@@ -1341,19 +1350,13 @@
 		    (krb-error 
 		     (write-sequence #(03 00) s) 
 		     (encode-krb-error s message))))))
-    (let ((bytes (flexi-streams:with-output-to-sequence (s)
-		   (encode-identifier s 16 :primitive nil) ;; sequence tag 
-		   (encode-length s (length octets))
-		   (write-sequence octets s))))
-      (encode-identifier stream 0 :class :application :primitive nil)
-      (encode-length stream (length bytes))
-      (write-sequence bytes stream))))
+    (encode-identifier stream 0 :class :application :primitive nil)
+    (encode-length stream (length octets))
+    (write-sequence octets stream)))
 
 ;; need a decode-initial-context-token as well
 (defun decode-initial-context-token (stream)
   (decode-identifier stream) ;; tag=0, class=application
-  (decode-length stream)
-  (decode-identifier stream) ;; tag=16, class=universal
   (let* ((len (decode-length stream))
 	 (bytes (nibbles:make-octet-vector len)))
     (read-sequence bytes stream)
