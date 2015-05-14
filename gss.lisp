@@ -16,16 +16,19 @@
 ;; somehow as well. But for a Kerberos application server, this is completely different. In that
 ;; case, we should simply be returning a keylist (either by computing it directly using 
 ;; GENERATE-KEYLIST or by parsing a keytab file). 
-;; So the conclusion is that the result of this function should be different depending on whehter
+;; So the conclusion is that the result of this function should be different depending on whether
 ;; we are running in an application server or client.
 ;; 
 ;; 2. INITIALIZE-SECURITY-CONTEXT and ACCEPT-SECURITY-CONTEXT should both return "context"
-;; instances, but they have different meanins. The former is only for the client, the later only
+;; instances, but they have different meanings. The former is only for the client, the later only
 ;; for the server. 
 ;; 
 ;; 3. For kerberos the exchange is either 1-way (client->server) or at most 2-way (client->server->client).
-;; For other protocols (e.g. NTLM) it can be 3-way (client->server->client->server). How should the 
-;; client authenticate the server?
+;; For other protocols (e.g. NTLM) it can be 3-way (client->server->client->server).
+;; In order to support multiple exhanges, INITIALIZE-SECURITY-CONTEXT should accept and optional buffer
+;; which contains the authentication token received from the peer. For Kerberos, this means clients which request
+;; mutual authentication (i.e. the application server authenticating itself back to the client). 
+;; Other systems might require ACCEPT-SECURITY-CONTEXT to be called a second time.
 ;;
 ;; 4. GSS adds a whole level of crap that isn't really helpful but somehow we need to support it. 
 ;; 
@@ -51,55 +54,61 @@
 ;; -------------------- for everyone ------------
 ;; everyone calls this, but the semantics are different if you are a server or client 
 
+;; (defclass kerberos-credential ()
+;;   ())
+
+;; (defclass kerberos-client-credential (kerberos-credential)
+;;   ((tgt :initarg :tgt :reader client-credential-tgt)))
+
+;; (defclass kerberos-server-credential (kerberos-credential)
+;;   ((keylist :initarg :keylist :reader server-credential-keylist)))
+
+
+
 (defclass kerberos-context ()
   ((creds :initarg :creds :initform nil :accessor kerberos-context-creds)
    (req :initarg :req :initform nil :accessor kerberos-context-req)
-   (buffer :initform nil :initarg :buffer :accessor kerberos-context-buffer)
    (key :initform nil :accessor kerberos-context-key)
-   (seqno :initform 0 :accessor kerberos-context-seqno)
-   (initiator :initform nil :initarg :initiator :accessor kerberos-context-initiator)))
+   (seqno :initform 0 :accessor kerberos-context-seqno)))
 
-(defmethod glass:acquire-credential ((mech-type (eql :kerberos)) 
-				     &key principal username password realm kdc-address till-time keylist)
+(defclass kerberos-client-context (kerberos-context)
+  ())
+
+(defclass kerberos-server-context (kerberos-context)
+  ())
+
+(defmethod print-object ((context kerberos-context) stream)
+  (print-unreadable-object (context stream :type t)))
+
+;; it is assumed a TGT is already available via a previous call to login-user. 
+(defmethod glass:acquire-credential ((mech-type (eql :kerberos)) &key principal realm keylist)
   (cond
-    ((and kdc-address username password realm)
-     ;; client logging into the domain
-     (let ((tgt (request-tgt username password realm 
-			      :kdc-address kdc-address
-			      :till-time till-time)))
-       (let ((creds (request-credentials tgt principal :till-time till-time)))
-	 (make-instance 'kerberos-context
-			:creds creds
-			:initiator t))))
-    ((and (not kdc-address) username password realm)
-     ;; application server generatigna keylist
-     (make-instance 'kerberos-context
-		    :creds (generate-keylist username password realm)))
     (keylist 
      ;; application server providing keylist
-     (make-instance 'kerberos-context 
+     (make-instance 'kerberos-server-context 
                     :creds keylist))
-    (realm
+    (t 
      ;; try to get a tgt we already have
-     (let ((tgt (find-if (lambda (tgt)
-			   (string= (login-token-realm tgt) realm))
-			 *tgt-cache*)))
-       (unless tgt (error "No TGT for the specified user, login by providing user credentials."))
-       (let ((creds (request-credentials tgt principal :till-time till-time)))
-	 (make-instance 'kerberos-context
+     (let ((tgt (if realm
+		    (find-if (lambda (tgt)
+			       (string= (login-token-realm tgt) realm))
+			     *tgt-cache*)
+		    (first *tgt-cache*))))
+       (unless tgt (error 'glass:gss-error :major :no-cred)) ;;(error "No TGT for the specified user, call LOGIN-USER first."))
+       (let ((creds (request-credentials tgt principal)))
+	 (make-instance 'kerberos-client-context
 			:creds creds
-			:initiator t))))
-    (t (error "must provide a realm"))))
+			:initiator t))))))
 
 ;; ----------- for the client ---------------
       
-(defmethod glass:initialize-security-context ((context kerberos-context) &key mutual)
+;; FIXME: need some mechanism to indicate whether more exhanges are required
+(defmethod glass:initialize-security-context ((context kerberos-client-context) &key mutual)
   (let* ((req (make-ap-request (kerberos-context-creds context) 
 			       :mutual mutual
-			       :seqno (kerberos-context-seqno context))) ;; FIXME: also need the checksum!
+			       :seqno (kerberos-context-seqno context))) ;; FIXME: also need the special packed checksum!
 	 (buffer (pack-initial-context-token req)))
     (setf (kerberos-context-req context) req
-	  (kerberos-context-buffer context) buffer
 	  (kerberos-context-key context)
 	  ;; the session key can be found in the crednetials (which is a kdc-rep)
 	  (enc-kdc-rep-part-key (kdc-rep-enc-part (kerberos-context-creds context))))
@@ -107,11 +116,10 @@
 	  
 ;; ---------- for the application server -----------
 
-(defmethod glass:accept-security-context ((context kerberos-context) buffer &key)
+(defmethod glass:accept-security-context ((context kerberos-server-context) buffer &key)
   (let ((ap-req (unpack-initial-context-token buffer)))
     (let ((cxt 
-           (make-instance 'kerberos-context 
-                          :buffer buffer
+           (make-instance 'kerberos-server-context 
                           :creds (kerberos-context-creds context)
                           :req (valid-ticket-p (kerberos-context-creds context) ap-req))))
     (setf (kerberos-context-key cxt) 
@@ -128,7 +136,7 @@
   (let* ((req (kerberos-context-req context))
 	 (session-key (kerberos-context-key context))
 	 (key (subseq (encryption-key-value session-key) 0 8))
-	 (initiator (kerberos-context-initiator context))
+	 (initiator (typep context 'kerberos-client-context))
 	 (message (concatenate '(vector (unsigned-byte 8)) message)))
     (pack-initial-context-token 
      (flexi-streams:with-output-to-sequence (s)
@@ -141,7 +149,7 @@
 			     key))) 
 	 
 	 ;; write the ap-req seqno
-	 (let ((seqno (if (kerberos-context-initiator context)
+	 (let ((seqno (if initiator 
 			  ;; we are the client, we store our own seqno
 			  (kerberos-context-seqno context)
 			  ;; the seqno can be found in the authenticator 
@@ -159,12 +167,13 @@
 	 ;; write the checksum 
 	 (write-sequence cksum s))))))
   
-(defmethod glass:verify-mic ((context kerberos-context) message message-token &key initiator)
+(defmethod glass:verify-mic ((context kerberos-context) message message-token &key)
   (let* ((req (kerberos-context-req context))
 	 (tok (unpack-initial-context-token message-token))
 	 (session-key (ap-req-session-key req))
 	 (key (subseq (encryption-key-value session-key) 0 8))
-	 (message (concatenate '(vector (unsigned-byte 8)) message)))
+	 (message (concatenate '(vector (unsigned-byte 8)) message))
+	 (initiator (typep context 'kerberos-client-context)))
     ;; start by getting the checksum and seqno fields
     (let ((seqno (subseq tok 8 16))
 	  (cksum (subseq tok 16 24))
@@ -186,7 +195,7 @@
   (let* ((req (kerberos-context-req context))
 	 (session-key (subseq (encryption-key-value (kerberos-context-key context))
 			      0 8))
-	 (initiator (kerberos-context-initiator context))
+	 (initiator (typep context 'kerberos-client-context))
 	 (message (concatenate '(vector (unsigned-byte 8)) message)))
     ;; start by padding the message
     (let* ((len (length message))
@@ -231,7 +240,7 @@
 	 (req (kerberos-context-req context))
 	 (session-key (subseq (encryption-key-value (kerberos-context-key context))
 			      0 8))
-	 (initiator (kerberos-context-initiator context)))
+	 (initiator (typep context 'kerberos-client-context)))
     ;; get the seqno, cksum and encrypted body
     (let ((eseqno (subseq tok 8 16))
 	  (cksum (subseq tok 16 24))
