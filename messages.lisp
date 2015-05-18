@@ -102,7 +102,10 @@ Returns (values principal realm).
     (when (< pos len)
       (setf realm (subseq string (1+ pos))))
     (values (make-principal-name :name (reverse names)
-				 :type :principal)
+				 :type (cond
+					 ((and names (string= (first names) "host")) :srv-host)
+					 ((cdr names) :srv-inst)
+					 (t :principal)))
 	    realm)))
 
 
