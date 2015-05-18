@@ -113,7 +113,7 @@
     (setf (kerberos-context-req context) req
 	  (kerberos-context-key context)
 	  ;; the session key can be found in the crednetials (which is a kdc-rep)
-	  (enc-kdc-rep-part-key (kdc-rep-enc-part (kerberos-context-creds context))))
+	  (enc-kdc-rep-part-key (kdc-rep-enc-part (client-credential-creds credentials))))
     (values context buffer))))
 	  
 ;; ---------- for the application server -----------
