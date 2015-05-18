@@ -76,11 +76,10 @@
   realm
   keylist)
 
-;;(defmethod print-object ((token login-token) stream)
-;;  (print-unreadable-object (token stream :type t)
-;;    (format stream ":USER ~S :REALM ~S" 
-;;            (principal-name-name (login-token-user token))
-;;            (login-token-realm token))))
+(defmethod print-object ((token login-token) stream)
+ (print-unreadable-object (token stream :type t :identity t)
+   (format stream "~A" (principal-string (login-token-user token)
+					 (login-token-realm token)))))
 
 (defvar *kdc-address* nil 
   "The address of the default KDC.")

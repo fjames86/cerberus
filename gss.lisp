@@ -65,7 +65,7 @@
   ((keylist :initarg :keylist :reader server-credential-keylist)))
 
 (defmethod print-object ((cred kerberos-credential) stream)
-  (print-unreadable-object (cred stream :type t)))
+  (print-unreadable-object (cred stream :type t :identity t)))
 
 
 ;; it is assumed the user has already logged in using LOGON-USER
@@ -101,7 +101,7 @@
   ())
 
 (defmethod print-object ((context kerberos-context) stream)
-  (print-unreadable-object (context stream :type t)))
+  (print-unreadable-object (context stream :type t :identity t)))
       
 ;; FIXME: need some mechanism to indicate whether more exhanges are required
 (defmethod glass:initialize-security-context ((credentials kerberos-client-credential) &key mutual)
@@ -138,9 +138,9 @@
       ;; if mutual authentication required then we need to pack a response buffer (an AP-REP structure)
       ;; to reply with
       (if (member :mutual-required (ap-req-options ap-req))
-	  (values cxt (pack #'encode-ap-rep 
-			    (make-ap-response (kerberos-context-key cxt)
-					      ap-req)))
+	  (values cxt (pack-initial-context-token 
+		       (make-ap-response (kerberos-context-key cxt)
+					 ap-req)))
 	  (values cxt nil)))))
 
 ;; this is for context deletion, do we need it?
