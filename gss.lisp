@@ -7,39 +7,6 @@
 
 (in-package #:cerberus)
 
-
-;; FIXME: this whole file needs a complete rethink/overhaul
-;;
-;; 1. What is the purpose of ACQUIRE-CREDENTIAL? 
-;; For a Kerberos client, this should be (essentially) returning a KDC-REP structure 
-;; but in order to do this, we need to know the relevant TGT. So this needs to be passed in
-;; somehow as well. But for a Kerberos application server, this is completely different. In that
-;; case, we should simply be returning a keylist (either by computing it directly using 
-;; GENERATE-KEYLIST or by parsing a keytab file). 
-;; So the conclusion is that the result of this function should be different depending on whether
-;; we are running in an application server or client.
-;; 
-;; 2. INITIALIZE-SECURITY-CONTEXT and ACCEPT-SECURITY-CONTEXT should both return "context"
-;; instances, but they have different meanings. The former is only for the client, the later only
-;; for the server. 
-;; 
-;; 3. For kerberos the exchange is either 1-way (client->server) or at most 2-way (client->server->client).
-;; For other protocols (e.g. NTLM) it can be 3-way (client->server->client->server).
-;; In order to support multiple exhanges, INITIALIZE-SECURITY-CONTEXT should accept and optional buffer
-;; which contains the authentication token received from the peer. For Kerberos, this means clients which request
-;; mutual authentication (i.e. the application server authenticating itself back to the client). 
-;; Other systems might require ACCEPT-SECURITY-CONTEXT to be called a second time.
-;;
-;; 4. GSS adds a whole level of crap that isn't really helpful but somehow we need to support it. 
-;; 
-;; 5. How should we signal errors? GSS has a whole system of major/minor statuses, we could just signal
-;; conditions, but do we really need to? I guess some APIs require it (we definitely need it do 
-;; RPCSEC_GSS in frpc). 
-;; 
-
-;; This is just one example of the bs that is involved in the GSS adventure game.
-;; Kerberos already does everything we need (even checksummed encrypted messages via KRB_PRIV)
-;; What is the point of all this? 
 ;; 
 ;; gss requires us to encode a structure to put into the checksum of the authenticator 
 ;; the checksum type is #x8003 (see rfc1964 sec 1.1.1)
@@ -48,8 +15,6 @@
 ;;     (nibbles:write-ub32/le 16 s) ;; length of bind field
 ;;     ;; md5 hash of channel bindings
 ;;     ;; flags
-
-   
 
 ;; -------------------- for everyone ------------
 ;; everyone calls this, but the semantics are different if you are a server or client 
@@ -89,7 +54,7 @@
 			  :tgt tgt
 			  :creds creds)))))))
     
-;; ----------- for the client ---------------
+;; ------------------- for the client ------------------------
 
 
 (defclass kerberos-context ()
@@ -103,7 +68,6 @@
 (defmethod print-object ((context kerberos-context) stream)
   (print-unreadable-object (context stream :type t :identity t)))
       
-;; FIXME: need some mechanism to indicate whether more exhanges are required
 (defmethod glass:initialize-security-context ((credentials kerberos-client-credential) &key mutual)
   (let ((context (make-instance 'kerberos-client-context)))				
     (let* ((req (make-ap-request (client-credential-creds credentials)
@@ -116,6 +80,7 @@
 	  (enc-kdc-rep-part-key (kdc-rep-enc-part (client-credential-creds credentials))))
     (values context buffer))))
 
+;; this method is used by clients to authenticate servers (when mutual authentication is required)
 (defmethod glass:initialize-security-context ((context kerberos-client-context) &key buffer)
   ;; the buffer contains a packed ap-rep structure
   (let ((ap-rep (unpack-initial-context-token buffer)))

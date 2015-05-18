@@ -38,6 +38,51 @@ Microsoft.
 
 ## 3. Usage
 
+Users should first "logon" by providing credentials and IP address of the KDC (Domain controller):
+```
+(logon-user "username" "password" "realm" :kdc-address "10.1.1.1")
+```
+This modifies the global `*CURRENT-USER*` variable. Alternatively you may rebind this variable 
+if you require a local change of user.
+```
+(with-current-user ("username" "Pasword" "realm" :kdc-address "10.1.1.1") 
+  body)
+```
+
+### 3.1 GSSAPI
+Kerberos authentication is then performed using the GSSAPI as provided by the [glass](https://github.com/fjames86/glass) 
+package. 
+
+
+```
+;; ---------- client --------
+;; acquire a client credential structure for the current user
+CL-USER> (defparameter *client-creds* (gss:acquire-credentials :kerberos "Administrator"))
+*CLIENT-CREDS*
+;; initialize a context and generate a token buffer to send to the server
+CL-USER> (multiple-value-bind (context buffer) (gss:initialize-security-context *client-creds* :mutual t)
+	   (defvar *client-context* context)
+	   (defvar *buffer* buffer))
+*BUFFER*
+
+;; -------- on the server -----
+;; acquire a crednetial structure for the current user
+CL-USER> (defparameter *server-creds* (gss:acquire-credentials :kerberos nil))
+*SERVER-CREDS*
+;; accept the context and generate a response token (if required)
+CL-USER> (multiple-value-bind (context buffer) (gss:accept-security-context *server-creds* *buffer*)
+	   (defvar *server-context* context)
+	   (defvar *response-buffer* buffer))
+*RESPONSE-BUFFER*
+
+;; -------- client -----------
+;; pass the token back to the client so it can validate the server
+CL-USER> (gss:initialize-security-context *client-context* :buffer *response-buffer*)
+```
+
+
+### 3.2 Underlying API
+
 Cerberus provides an API to the "raw" Kerberos protocol, e.g.
 ```
 ;; client logs in to the AS and requests a TGT
@@ -60,12 +105,9 @@ CL-USER> (defparameter *keylist* (cerberus:generate-keylist "password" :username
 ;; the application server receives the packed AP-REQ and validates it 
 CL-USER> (cerberus:valid-ticket-p *keylist* (cerberus:unpack-initial-context-token *buffer*))
 T
-
 ```
 
-However, users typically require interacting with a "GSS" layer which wraps the details of Kerberos. The cerberus
-package defines methods for the generic functions exported from the [glass](https://github.com/fjames86/glass) package. 
-This is actually how the API is typically consumed.
+However, users typically require interacting with a "GSS" layer which wraps the details of Kerberos. 
 
 ## 4. Encryption profiles
 Cerberus supports a set of encryption "profiles", which are implemented by specializing a set of generic functions.
@@ -83,6 +125,8 @@ CL-USER> (cerberus:load-keytab "my.keytab")
 ```
 This returns a list of KEYTAB-ENTRY structures, which include information about the principal as well as the 
 encryption key. 
+
+Note: there currently is no way to use the contents of a keytab file.
 
 ## 6. TODO
 - [ ] Need to be able to renew tickets (written the fn, does it work?)
