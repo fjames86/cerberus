@@ -115,7 +115,14 @@
 	  ;; the session key can be found in the crednetials (which is a kdc-rep)
 	  (enc-kdc-rep-part-key (kdc-rep-enc-part (client-credential-creds credentials))))
     (values context buffer))))
-	  
+
+(defmethod glass:initialize-security-context ((context kerberos-client-context) &key buffer)
+  ;; the buffer contains a packed ap-rep structure
+  (let ((ap-rep (unpack-initial-context-token buffer)))
+    (declare (ignore ap-rep))
+    ;; FIXME: validate the timestamps in the ap-rep match those we sent in the ap-req 
+    context))
+
 ;; ---------- for the application server -----------
 
 (defclass kerberos-server-context (kerberos-context)
