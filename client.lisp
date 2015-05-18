@@ -327,6 +327,18 @@ respond with an AP-REP structure.
     (pack #'encode-ap-req 
 	  (make-ap-request credentials :mutual mutual)))
 
+
+
+(defun make-ap-response (session-key ap-req)
+  (let ((time (authenticator-ctime (ap-req-authenticator ap-req)))
+	(usec (authenticator-cusec (ap-req-authenticator ap-req))))
+    (make-ap-rep :enc-part (encrypt-data (encryption-key-type session-key)
+					 (pack #'encode-enc-ap-rep-part 
+					       (make-enc-ap-rep-part :ctime time
+								     :cusec usec))
+					 (encryption-key-value session-key)
+					 :usage :ap-rep))))
+
 ;; --------------- application server -------------------------
 
 (defun decrypt-ticket-enc-part (keylist ticket)

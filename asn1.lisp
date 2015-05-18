@@ -1168,8 +1168,8 @@
   (enc-part encrypted-data :tag 2))
 
 (defsequence enc-ap-rep-part ((:tag 27) (:class :application))
-  (ctime kerberos-time :tag 0)
-  (cusec microseconds :tag 1)
+  (ctime kerberos-time :tag 0) ;; time sent in the ap-req authenticator
+  (cusec microseconds :tag 1) ;; time sent in the ap-req authenticator
   (subkey encryption-key :tag 2 :optional t) ;; optional
   (seqno asn1-uint32 :tag 3 :optional t) ;; optional
   )

@@ -54,31 +54,19 @@
 ;; -------------------- for everyone ------------
 ;; everyone calls this, but the semantics are different if you are a server or client 
 
-;; (defclass kerberos-credential ()
-;;   ())
-
-;; (defclass kerberos-client-credential (kerberos-credential)
-;;   ((tgt :initarg :tgt :reader client-credential-tgt)))
-
-;; (defclass kerberos-server-credential (kerberos-credential)
-;;   ((keylist :initarg :keylist :reader server-credential-keylist)))
-
-
-
-(defclass kerberos-context ()
-  ((creds :initarg :creds :initform nil :accessor kerberos-context-creds)
-   (req :initarg :req :initform nil :accessor kerberos-context-req)
-   (key :initform nil :accessor kerberos-context-key)
-   (seqno :initform 0 :accessor kerberos-context-seqno)))
-
-(defclass kerberos-client-context (kerberos-context)
+(defclass kerberos-credential ()
   ())
 
-(defclass kerberos-server-context (kerberos-context)
-  ())
+(defclass kerberos-client-credential (kerberos-credential)
+  ((tgt :initarg :tgt :reader client-credential-tgt)
+   (creds :initarg :creds :reader client-credential-creds)))
 
-(defmethod print-object ((context kerberos-context) stream)
-  (print-unreadable-object (context stream :type t)))
+(defclass kerberos-server-credential (kerberos-credential)
+  ((keylist :initarg :keylist :reader server-credential-keylist)))
+
+(defmethod print-object ((cred kerberos-credential) stream)
+  (print-unreadable-object (cred stream :type t)))
+
 
 ;; it is assumed the user has already logged in using LOGON-USER
 (defmethod glass:acquire-credentials ((mech-type (eql :kerberos)) principal &key)
@@ -87,8 +75,8 @@
      (error 'glass:gss-error :major :no-cred))
     ((null principal)
      ;; application server providing keylist
-     (make-instance 'kerberos-server-context 
-		    :creds (login-token-keylist *current-user*)))
+     (make-instance 'kerberos-server-credential 
+		    :keylist (login-token-keylist *current-user*)))
     (principal 
      (multiple-value-bind (principal realm) (string-principal principal)
        ;; try to get a tgt we already have
@@ -97,35 +85,56 @@
 	 (unless (or (null realm) (string= realm (login-token-realm tgt)))
 	   (error "Cross-realm requests not currently supported"))
 	 (let ((creds (request-credentials tgt principal)))
-	   (make-instance 'kerberos-client-context
-			  :creds creds
-			  :initiator t)))))))
+	   (make-instance 'kerberos-client-credential
+			  :tgt tgt
+			  :creds creds)))))))
     
 ;; ----------- for the client ---------------
+
+
+(defclass kerberos-context ()
+  ((req :initarg :req :initform nil :accessor kerberos-context-req)
+   (key :initform nil :accessor kerberos-context-key)
+   (seqno :initform 0 :accessor kerberos-context-seqno)))
+
+(defclass kerberos-client-context (kerberos-context)
+  ())
+
+(defmethod print-object ((context kerberos-context) stream)
+  (print-unreadable-object (context stream :type t)))
       
 ;; FIXME: need some mechanism to indicate whether more exhanges are required
-(defmethod glass:initialize-security-context ((context kerberos-client-context) &key mutual)
-  (let* ((req (make-ap-request (kerberos-context-creds context) 
-			       :mutual mutual
-			       :seqno (kerberos-context-seqno context))) ;; FIXME: also need the special packed checksum!
-	 (buffer (pack-initial-context-token req)))
+(defmethod glass:initialize-security-context ((credentials kerberos-client-credential) &key mutual)
+  (let ((context (make-instance 'kerberos-client-context)))				
+    (let* ((req (make-ap-request (client-credential-creds credentials)
+				 :mutual mutual
+				 :seqno (kerberos-context-seqno context))) ;; FIXME: also need the special packed checksum!
+	   (buffer (pack-initial-context-token req)))
     (setf (kerberos-context-req context) req
 	  (kerberos-context-key context)
 	  ;; the session key can be found in the crednetials (which is a kdc-rep)
 	  (enc-kdc-rep-part-key (kdc-rep-enc-part (kerberos-context-creds context))))
-    buffer))
+    (values context buffer))))
 	  
 ;; ---------- for the application server -----------
 
-(defmethod glass:accept-security-context ((context kerberos-server-context) buffer &key)
+(defclass kerberos-server-context (kerberos-context)
+  ())
+
+(defmethod glass:accept-security-context ((credentials kerberos-server-credential) buffer &key)
   (let ((ap-req (unpack-initial-context-token buffer)))
     (let ((cxt 
            (make-instance 'kerberos-server-context 
-                          :creds (kerberos-context-creds context)
-                          :req (valid-ticket-p (kerberos-context-creds context) ap-req))))
-    (setf (kerberos-context-key cxt) 
-          (enc-ticket-part-key (ticket-enc-part (ap-req-ticket ap-req))))
-    cxt)))
+                          :req (valid-ticket-p (server-credential-keylist credentials) ap-req))))
+      (setf (kerberos-context-key cxt) 
+	    (enc-ticket-part-key (ticket-enc-part (ap-req-ticket ap-req))))
+      ;; if mutual authentication required then we need to pack a response buffer (an AP-REP structure)
+      ;; to reply with
+      (if (member :mutual-required (ap-req-options ap-req))
+	  (values cxt (pack #'encode-ap-rep 
+			    (make-ap-response (kerberos-context-key cxt)
+					      ap-req)))
+	  (values cxt nil)))))
 
 ;; this is for context deletion, do we need it?
 ;;(defgeneric gss-process-context-token (mech-type context &key)
