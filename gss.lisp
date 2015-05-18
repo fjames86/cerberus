@@ -80,26 +80,27 @@
 (defmethod print-object ((context kerberos-context) stream)
   (print-unreadable-object (context stream :type t)))
 
-;; it is assumed a TGT is already available via a previous call to login-user. 
-(defmethod glass:acquire-credential ((mech-type (eql :kerberos)) &key principal realm keylist)
+;; it is assumed the user has already logged in using LOGON-USER
+(defmethod glass:acquire-credentials ((mech-type (eql :kerberos)) principal &key)
   (cond
-    (keylist 
+    ((null *current-user*)
+     (error 'glass:gss-error :major :no-cred))
+    ((null principal)
      ;; application server providing keylist
      (make-instance 'kerberos-server-context 
-                    :creds keylist))
-    (t 
-     ;; try to get a tgt we already have
-     (let ((tgt (if realm
-		    (find-if (lambda (tgt)
-			       (string= (login-token-realm tgt) realm))
-			     *tgt-cache*)
-		    (first *tgt-cache*))))
-       (unless tgt (error 'glass:gss-error :major :no-cred)) ;;(error "No TGT for the specified user, call LOGIN-USER first."))
-       (let ((creds (request-credentials tgt principal)))
-	 (make-instance 'kerberos-client-context
-			:creds creds
-			:initiator t))))))
-
+		    :creds (login-token-keylist *current-user*)))
+    (principal 
+     (multiple-value-bind (principal realm) (string-principal principal)
+       ;; try to get a tgt we already have
+       (let ((tgt *current-user*))		      
+	 ;; check the realms match because we don't support cross-realm requests yet
+	 (unless (or (null realm) (string= realm (login-token-realm tgt)))
+	   (error "Cross-realm requests not currently supported"))
+	 (let ((creds (request-credentials tgt principal)))
+	   (make-instance 'kerberos-client-context
+			  :creds creds
+			  :initiator t)))))))
+    
 ;; ----------- for the client ---------------
       
 ;; FIXME: need some mechanism to indicate whether more exhanges are required

@@ -20,7 +20,8 @@
       (13 ;; tgs-rep
        (unpack #'decode-tgs-rep buffer)))))
 
-;; tcp
+;; tcp (note: udp seems to be pretty useless... when I called it I just
+;; kept getting "response would not fit in a udp packet, try tcp" error (RESPONSE-TOO-BIG)
 (defun send-req-tcp (msg host &optional port)
   "Send a message to the KDC using TCP"
   (let ((socket (usocket:socket-connect host (or port 88)
@@ -72,7 +73,8 @@
   rep
   tgs
   user
-  realm)
+  realm
+  keylist)
 
 ;;(defmethod print-object ((token login-token) stream)
 ;;  (print-unreadable-object (token stream :type t)
@@ -156,10 +158,31 @@ ETYPE ::= encryption profile name to use for pre-authentication.
 	(push tgt *tgt-cache*)
 	tgt))))
 
-(defun login-user (username password &key realm kdc-address)
-  (request-tgt username password 
-	       (or realm *default-realm*)
-	       :kdc-address (or kdc-address *kdc-address*)))
+;; ---------------------------------------------------
+
+(defvar *current-user*
+  "The login token of the current user. Set with LOGON-USER (interactive mode) or dynamically rebind")
+
+(defun logon-user (username password realm &key mode kdc-address)
+  (let ((tgt
+	 (request-tgt username password 
+		      (or realm *default-realm*)
+		      :kdc-address (or kdc-address *kdc-address*))))
+    ;; store the keylist for this user as well (comes in handy if we are running as a server!)
+    (setf (login-token-keylist tgt)
+	  (generate-keylist username password realm))
+    ;; modify the global if in interactive mode
+    (when (or (null mode) (eq mode :interactive))
+      (setf *current-user* tgt))
+    tgt))
+
+
+(defmacro with-current-user ((username password realm &rest args) &body body)
+  `(let ((*current-user* (logon-user ,username ,password ,realm ,@args)))
+     ,@body))
+
+;; ------------------------------------------------------
+
 
 (defvar *credential-cache* nil
   "List of tickets that have previously been granted. REQUEST-CREDENTIALS will return an

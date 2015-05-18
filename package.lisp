@@ -3,7 +3,7 @@
 
 (defpackage #:cerberus
   (:use #:cl)
-  (:export #:string-to-key
+  (:export #:string-to-key ;; should this be exported?
 
 	   ;; communication with the KDC
 	   #:request-tgt
@@ -14,10 +14,17 @@
 	   #:principal
 	   #:string-principal
 	   #:principal-string
+	   
+	   ;; should these be exported?
 	   #:make-ap-request
 	   #:valid-ticket-p
 	   #:make-host-address
 	   #:ap-req-session-key 
+
+	   ;; main entry point function
+	   #:logon-user
+	   #:with-current-user
+	   #:*current-user*
 
 	   ;; key lists
 	   #:generate-keylist
