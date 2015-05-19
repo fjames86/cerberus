@@ -23,6 +23,7 @@
 
 	   ;; main entry point function
 	   #:logon-user
+	   #:logon-service
 	   #:with-current-user
 	   #:*current-user*
 

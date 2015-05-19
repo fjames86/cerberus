@@ -97,7 +97,7 @@
 			 (principal-name-name principal))))
 	   *tgt-cache*))
 
-(defun request-tgt (username password realm &key kdc-address till-time (etype :des-cbc-md5))
+(defun request-tgt (principal password realm &key kdc-address till-time (etype :des-cbc-md5))
   "Login to the authentication server to reqest a ticket for the Ticket-granting server. Returns a LOGIN-TOKEN
 structure which should be used for requests for further tickets.
 
@@ -121,10 +121,14 @@ ETYPE ::= encryption profile name to use for pre-authentication.
      (setf realm *default-realm*))
     (t (error "Must specify a realm if not set default.")))
      
-  (let ((key (string-to-key etype
+  (let* ((salt (format nil "~A~A" 
+		       (string-upcase realm) 
+		       (with-output-to-string (s)
+			 (dolist (name (principal-name-name principal))
+			   (princ name s)))))
+	 (key (string-to-key etype
                             password
-                            (format nil "~A~A" (string-upcase realm) username)))
-        (principal (principal username)))
+			    salt)))
 
     (let ((tgt (find-tgt principal realm)))
       (when tgt (return-from request-tgt tgt)))
@@ -142,7 +146,7 @@ ETYPE ::= encryption profile name to use for pre-authentication.
 				       (let ((e (kdc-rep-enc-part as-rep)))
 					 (string-to-key (encrypted-data-type e)
 							password
-							(format nil "~A~A" (string-upcase realm) username)))
+							salt))
 				       :usage :as-rep))))
         ;; should really validate the reponse here, e.g. check nonce etc.
         ;; lets just descrypt it and replace the enc-part with the decrypted enc-part 
@@ -162,22 +166,47 @@ ETYPE ::= encryption profile name to use for pre-authentication.
 (defvar *current-user*
   "The login token of the current user. Set with LOGON-USER (interactive mode) or dynamically rebind")
 
-(defun logon-user (username password realm &key mode kdc-address)
-  (let ((tgt
-	 (request-tgt username password 
-		      (or realm *default-realm*)
-		      :kdc-address (or kdc-address *kdc-address*))))
-    ;; store the keylist for this user as well (comes in handy if we are running as a server!)
-    (setf (login-token-keylist tgt)
-	  (generate-keylist username password realm))
-    ;; modify the global if in interactive mode
-    (when (or (null mode) (eq mode :interactive))
-      (setf *current-user* tgt))
-    tgt))
+(defun logon-user (principal password &key mode kdc-address)
+  "Logon the user by requesting a TGT from the KDC.
+PRINCIPAL ::= a string naming the principal, e.g. user@realm, host/my.host.com@realm, service-name/my-host.com@realm
+PASSWORD ::= a string containing the plaintext password
+MODE ::= a symbol naming a logon mode, :INTERACTIVE implies modifying the *CURRENT-USER*, :NETWORK does not modify the environment.
+If *CURRENT-USER* is nil, :INTERACTIVE is implied, otherwise :NETWORK is implied.
+KDC-ADDRESS ::= IP of the KDC. This MUST be supplied in the first call.
 
+Returns a login token."
+  (declare (type string principal))
+  (multiple-value-bind (p realm) (string-principal principal)
+    (let ((tgt
+	   (request-tgt p password 
+			(or realm *default-realm*)
+			:kdc-address (or kdc-address *kdc-address*))))
+      ;; store the keylist for this user as well (comes in handy if we are running as a server!)
+      (setf (login-token-keylist tgt)
+	    (generate-keylist principal password))
+      ;; modify the global if in interactive mode
+      (cond
+	((eq mode :interactive) 
+	 (setf *current-user* tgt))
+	((and (null *current-user*) (or (null mode) (eq mode :interactive)))
+	 (setf *current-user* tgt)))
+      
+      tgt)))
 
-(defmacro with-current-user ((username password realm &rest args) &body body)
-  `(let ((*current-user* (logon-user ,username ,password ,realm ,@args)))
+(defun logon-service (principal keylist &key mode)
+  (multiple-value-bind (p realm) (string-principal principal)
+    (let ((token (make-login-token :user p
+				   :realm realm
+				   :keylist keylist)))
+      (cond
+	((eq mode :interactive) 
+	 (setf *current-user* token))
+	((and (null *current-user*) (or (null mode) (eq mode :interactive)))
+	 (setf *current-user* token)))
+      token)))
+
+(defmacro with-current-user ((principal password &rest args) &body body)
+  `(let ((*current-user* (logon-user ,principal ,password ,@args)))
      ,@body))
 
 ;; ------------------------------------------------------
@@ -210,7 +239,10 @@ Returns a KDC-REP structure."
 
   ;; if a string then convert to a principal
   (when (stringp server)
-    (setf server (principal server)))
+    (multiple-value-bind (p r) (string-principal server)
+      (unless (string= r (login-token-realm tgt)) 
+	(error "Cross-realm requests are not yet supported"))
+      (setf server p)))
   
   (let ((cred (find-credentials (login-token-user tgt) (login-token-realm tgt))))
     (when cred (return-from request-credentials cred)))
@@ -390,14 +422,18 @@ Returns the modifed AP-REQ structure, with enc-parts replaced with decrypted ver
 
 ;; --------------------------------------------------------------
 
-(defun generate-keylist (username password &optional realm)
+(defun generate-keylist (principal password)
   "Generate keys for all the registered profiles."
-  (let ((salt (format nil "~A~A" 
-		      (string-upcase realm) username)))
-    (mapcar (lambda (type)
-	      (make-encryption-key :type type
-				   :value (string-to-key type password salt)))
-	    (list-all-profiles))))
+  (multiple-value-bind (p realm) (string-principal principal)
+    (let ((salt (with-output-to-string (s)
+		  (when realm
+		    (princ (string-upcase realm) s))
+		  (dolist (name (principal-name-name p))
+		    (princ name s)))))
+      (mapcar (lambda (type)
+		(make-encryption-key :type type
+				     :value (string-to-key type password salt)))
+	      (list-all-profiles)))))
 
 ;; ---------------------------------------
 ;; for initial conrtext creation (I.e. GSS)
