@@ -441,8 +441,6 @@ Returns the modifed AP-REQ structure, with enc-parts replaced with decrypted ver
 	  (setf (ap-req-ticket ap-req) ticket
 		(ap-req-authenticator ap-req) a)
 	  
-	  (break)
-
 	  ap-req)))))
 
 (defun ap-req-session-key (req)
