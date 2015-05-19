@@ -119,7 +119,8 @@ ETYPE ::= encryption profile name to use for pre-authentication.
      (setf *default-realm* realm))
     ((and *default-realm* (not realm))
      (setf realm *default-realm*))
-    (t (error "Must specify a realm if not set default.")))
+    ((and (not realm) (not *default-realm*))
+     (error "Must specify a realm if not set default.")))
      
   (let* ((salt (format nil "~A~A" 
 		       (string-upcase realm) 
@@ -163,7 +164,7 @@ ETYPE ::= encryption profile name to use for pre-authentication.
 
 ;; ---------------------------------------------------
 
-(defvar *current-user*
+(defvar *current-user* nil
   "The login token of the current user. Set with LOGON-USER (interactive mode) or dynamically rebind")
 
 (defun logon-user (principal password &key mode kdc-address)
@@ -193,15 +194,16 @@ Returns a login token."
       
       tgt)))
 
-(defun logon-service (principal keylist &key mode)
+(defun logon-service (principal password &key mode)
   (multiple-value-bind (p realm) (string-principal principal)
     (let ((token (make-login-token :user p
 				   :realm realm
-				   :keylist keylist)))
+				   :keylist (generate-keylist principal password))))
       (cond
 	((eq mode :interactive) 
 	 (setf *current-user* token))
-	((and (null *current-user*) (or (null mode) (eq mode :interactive)))
+	((and (null *current-user*) 
+	      (or (null mode) (eq mode :interactive)))
 	 (setf *current-user* token)))
       token)))
 
@@ -385,6 +387,9 @@ respond with an AP-REP structure.
 				:usage :ticket))
 	  (error "No key for encryption type ~S" (encrypted-data-type enc))))))
 
+(defconstant +acceptable-skew+ (* 60 5)
+  "Acceptable clock skew, default 5 minutes")
+
 (defun valid-ticket-p (keylist ap-req)
   "Decrypt the ticket and check its contents against the authenticator. 
 If the input is an opaque buffer, it is parsed into an AP-REQ strucutre. 
@@ -404,15 +409,40 @@ Returns the modifed AP-REQ structure, with enc-parts replaced with decrypted ver
       
       (let ((key (enc-ticket-part-key enc)))
 	;; now decrypt the authenticator using the session key we got from the ticket
-	(let ((a (decrypt-data enc-auth (encryption-key-value key)
-			       :usage :ap-req)))
+	(let ((a (unpack #'decode-authenticator 
+			 (decrypt-data enc-auth (encryption-key-value key)
+				       :usage :ap-req))))
+
 	  ;; check the contents of the authenticator against the ticket....
-	  ;; FIXME: for now we just assume it's ok
-	  
+	  ;; check the crealm and cname match
+	  (unless (string= (enc-ticket-part-crealm enc) (authenticator-crealm a))
+	    (error 'kerberos-error 
+		   :stat :badmatch
+		   :desc "Client realm mismatch"))
+
+	  ;; check the ctime and cusec match
+	  (unless (every #'string= 
+			 (principal-name-name (enc-ticket-part-cname enc))
+			 (principal-name-name (authenticator-cname a)))
+	    (error 'kerberos-error 
+		   :stat :badmatch
+		   :desc "Principal name mismatch"))
+
+	  ;; check the client time is within acceptable skew of currnet time
+	  (unless (< (abs (- (get-universal-time) (authenticator-ctime a)))
+		     +acceptable-skew+)
+	    (error 'kerberos-error :stat :skew))
+
+	  ;; check the endtime is less than the current time
+	  (unless (< (get-universal-time) (enc-ticket-part-endtime enc))
+	    (error 'kerberos-error :stat :tkt-expired))
+
 	  ;; fixup the ap-req and return that
 	  (setf (ap-req-ticket ap-req) ticket
-		(ap-req-authenticator ap-req) (unpack #'decode-authenticator a))
+		(ap-req-authenticator ap-req) a)
 	  
+	  (break)
+
 	  ap-req)))))
 
 (defun ap-req-session-key (req)
