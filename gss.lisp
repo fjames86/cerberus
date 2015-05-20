@@ -152,7 +152,7 @@
 (defmethod glass:verify-mic ((context kerberos-context) message message-token &key)
   (let* ((req (kerberos-context-req context))
 	 (tok (unpack-initial-context-token message-token))
-	 (session-key (ap-req-session-key req))
+	 (session-key (kerberos-context-key context)) ;;(ap-req-session-key req))
 	 (key (subseq (encryption-key-value session-key) 0 8))
 	 (message (concatenate '(vector (unsigned-byte 8)) message))
 	 (initiator (typep context 'kerberos-client-context)))
