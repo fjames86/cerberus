@@ -168,7 +168,10 @@
 	       sq 
 	       (concatenate '(vector (unsigned-byte 8)) 
 			    (let ((v (nibbles:make-octet-vector 4)))
-			      (setf (nibbles:ub32ref/be v 0) (authenticator-seqno (ap-req-authenticator req)))
+			      (setf (nibbles:ub32ref/be v 0) 
+				    (if initiator
+					(kerberos-context-seqno context)
+					(authenticator-seqno (ap-req-authenticator req))))
 			      v)
 			    (if (not initiator) '(0 0 0 0) '(#xff #xff #xff #xff))))))))
 
