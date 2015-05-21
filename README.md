@@ -1,5 +1,5 @@
 # cerberus
-A Kerberos (version 5) implementation.
+A Common Lisp Kerberos (version 5) implementation.
 
 This is an implementation of the Kerberos v5 authentication protocol in Common Lisp. The intention is to provide 
 a robust, reliable and portable (across both Lisp implementations and host OSs) Kerberos authentication system. 
@@ -40,14 +40,20 @@ Microsoft.
 
 Users should first "logon" by providing credentials and IP address of the KDC (Domain controller):
 ```
-(logon-user "username" "password" "realm" :kdc-address "10.1.1.1")
+(logon-user "username@realm" "password" :kdc-address "10.1.1.1")
 ```
 This modifies the global `*CURRENT-USER*` variable. Alternatively you may rebind this variable 
 if you require a local change of user.
 ```
-(with-current-user ("username" "Pasword" "realm" :kdc-address "10.1.1.1") 
+(with-current-user ((logon-user "username@realm" "Pasword" :kdc-address "10.1.1.1"))
   body)
 ```
+
+Services, which do not require initial authentication with the KDC, should use 
+```
+(logon-service "service/host.name.com@realm" keylist)
+```
+where `KEYLIST` is a list of keys as returned from either `GENERATE-KEYLIST` or `LOAD-KEYTAB`.
 
 ### 3.1 GSSAPI
 Kerberos authentication is then performed using the GSSAPI as provided by the [glass](https://github.com/fjames86/glass) 
@@ -56,8 +62,9 @@ package.
 
 ```
 ;; ---------- client --------
+CL-USER> (logon-user "username@realm" "password" :kdc-address "10.1.1.1")
 ;; acquire a client credential structure for the current user
-CL-USER> (defparameter *client-creds* (gss:acquire-credentials :kerberos "Administrator"))
+CL-USER> (defparameter *client-creds* (gss:acquire-credentials :kerberos "service/host.name.com@realm"))
 *CLIENT-CREDS*
 ;; initialize a context and generate a token buffer to send to the server
 CL-USER> (multiple-value-bind (context buffer) (gss:initialize-security-context *client-creds* :mutual t)
@@ -66,6 +73,7 @@ CL-USER> (multiple-value-bind (context buffer) (gss:initialize-security-context 
 *BUFFER*
 
 ;; -------- on the server -----
+CL-USER> (logon-service "service/host.name.com@realm" *keylist*)
 ;; acquire a crednetial structure for the current user
 CL-USER> (defparameter *server-creds* (gss:acquire-credentials :kerberos nil))
 *SERVER-CREDS*
@@ -79,35 +87,6 @@ CL-USER> (multiple-value-bind (context buffer) (gss:accept-security-context *ser
 ;; pass the token back to the client so it can validate the server
 CL-USER> (gss:initialize-security-context *client-context* :buffer *response-buffer*)
 ```
-
-
-### 3.2 Underlying API
-
-Cerberus provides an API to the "raw" Kerberos protocol, e.g.
-```
-;; client logs in to the AS and requests a TGT
-CL-USER> (defparameter *tgt* (cerberus:request-tgt "Administrator" "password" "REALM" :kdc-address "10.1.1.1"))
-*TGT*
-;; request credentials to talk to the user "Administrator"
-CL-USER> (defparameter *creds* (cerberus:request-credentials *tgt* (cerberus:principal "Administrator")))
-*CREDS*
-;; pack an AP-REQ structure to be sent to the application server
-CL-USER> (defparameter *buffer* (cerberus:pack-initial-context-token (cerberus:make-ap-request *creds*)))
-*BUFFER*
-;; send the *BUFFER* to the application server using whatever protocol you need
-
-;; ----- send the buffer to the application server -----
-;; we are now on the application server
-
-;; the application server must first generate a list of keys for the various encryption profiles
-CL-USER> (defparameter *keylist* (cerberus:generate-keylist "password" :username "Administrator" :realm "REALM"))
-*KEYLIST*
-;; the application server receives the packed AP-REQ and validates it 
-CL-USER> (cerberus:valid-ticket-p *keylist* (cerberus:unpack-initial-context-token *buffer*))
-T
-```
-
-However, users typically require interacting with a "GSS" layer which wraps the details of Kerberos. 
 
 ## 4. Encryption profiles
 Cerberus supports a set of encryption "profiles", which are implemented by specializing a set of generic functions.
@@ -129,16 +108,16 @@ encryption key.
 Note: there currently is no way to use the contents of a keytab file.
 
 ## 6. TODO
-- [ ] Need to be able to renew tickets (written the fn, does it work?)
+- [ ] Need to be able to renew tickets (written the function but does it work?)
 - [x] Somehow need to be able to use this in an application that requires GSS support.
 - [x] Need to support encrypting application messages using the (sub)session key.
 - [x] Some sort of credential cache, i.e. database of TGTs and tickets for other principals.
 - [ ] Support cross-realm requests and tickets.
 - [ ] Need to support sub-session keys. At the moment it is assumed only the session key is available.
-
+- [ ] A persistent credential cache? Could use the serializer to write the tickets out to a file.
 
 ## 7. Notes
-* Encryption functions provided by the ironclad package.
+* Both the DER serializer and the encryption functions cons A LOT.
 * The ASN.1 serializer is specific to this project and NOT a generalized ASN.1 (DER) serializer. It makes certain assumptions which are valid
 in the context of Kerberos messages, but are not generally applicable. Perhaps it could form the basis of one in the future.
 * This was developed and tested against the Windows KDC (i.e. active directory). It should work with other KDCs such as MIT and Heimdal, 

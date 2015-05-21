@@ -207,8 +207,9 @@ Returns a login token."
 	 (setf *current-user* token)))
       token)))
 
-(defmacro with-current-user ((principal password &rest args) &body body)
-  `(let ((*current-user* (logon-user ,principal ,password ,@args)))
+(defmacro with-current-user ((token) &body body)
+  "Evaluate BODY with the current user bound to the token provided."
+  `(let ((*current-user* ,token))
      ,@body))
 
 ;; ------------------------------------------------------

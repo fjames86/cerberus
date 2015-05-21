@@ -13,7 +13,7 @@
    (:file "encryption" :depends-on ("messages" "errors"))
    (:file "checksums" :depends-on ("encryption"))
    (:file "ciphers" :depends-on ("errors" "checksums"))
-   (:file "errors" :depends-on ("package"))
+   (:file "errors" :depends-on ("package" "asn1"))
    (:file "preauth" :depends-on ("asn1" "ciphers"))
    (:file "client" :depends-on ("package" "preauth"))
    (:file "keytab" :depends-on ("package" "asn1"))
