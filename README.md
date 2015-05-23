@@ -88,6 +88,27 @@ CL-USER> (multiple-value-bind (context buffer) (gss:accept-security-context *ser
 CL-USER> (gss:initialize-security-context *client-context* :buffer *response-buffer*)
 ```
 
+### 3.2 KDC discovery
+To discover the location of your KDC on the network, you should issue a DNS SRV query, e.g. using [dragons](https://github.com/fjames86/dragons):
+```
+CL-USER> (dragons:query (dragons:question "_kerberos._tcp.my.domain.com" :srv))
+(#S(DRAGONS::RR
+    :NAME "_kerberos._tcp.my.domain.com"
+    :TYPE :SRV
+    :CLASS :IN
+    :TTL 600
+    :RDATA (:PRIORITY 0 :WEIGHT 100 :PORT 88 :TARGET
+            "myDC.my.domain.com")))
+NIL
+(#S(DRAGONS::RR
+    :NAME "myDC.my.domain.com"
+    :TYPE :A
+    :CLASS :IN
+    :TTL 1200
+    :RDATA #(10 1 1 47)))
+((:NAME "_kerberos._tcp.my.domain.com" :TYPE :SRV :CLASS :IN))
+```
+
 ## 4. Encryption profiles
 Cerberus supports a set of encryption "profiles", which are implemented by specializing a set of generic functions.
 
