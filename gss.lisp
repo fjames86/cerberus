@@ -112,6 +112,12 @@
 ;;(defgeneric gss-process-context-token (mech-type context &key)
 ;;  (:documentation "CONTEXT is returned from ACCEPT-SECURITY-CONTEXT. c.f. GSS_Process_context_token"))
 
+;; this is used to generate a stringy name which corresponds to the person who has been authenticated by this context
+(defmethod glass:context-principal-name ((context kerberos-server-context) &key)
+  (let ((req (kerberos-context-req context)))
+    (principal-string (authenticator-cname (ap-req-authenticator req))
+		      (authenticator-crealm (ap-req-authenticator req)))))
+
 ;; ------------------ per-message calls --------------------------
 
 (defmethod glass:get-mic ((context kerberos-context) message &key)
