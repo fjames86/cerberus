@@ -168,9 +168,13 @@ ETYPE ::= encryption profile name to use for pre-authentication.
   "The login token of the current user. Set with LOGON-USER (interactive mode) or dynamically rebind")
 
 (defun logon-user (principal password &key mode kdc-address)
-  "Logon the user by requesting a TGT from the KDC.
+  "Logon the user by requesting a TGT from the KDC. This function MUST be called before any other functionality (e.g. GSS methods exported 
+from the GLASS package) will work.
+
 PRINCIPAL ::= a string naming the principal, e.g. user@realm, host/my.host.com@realm, service-name/my-host.com@realm
-PASSWORD ::= a string containing the plaintext password
+
+PASSWORD ::= a string containing the plaintext password.
+
 MODE ::= a symbol naming a logon mode, :INTERACTIVE implies modifying the *CURRENT-USER*, :NETWORK does not modify the environment.
 If *CURRENT-USER* is nil, :INTERACTIVE is implied, otherwise :NETWORK is implied.
 KDC-ADDRESS ::= IP of the KDC. This MUST be supplied in the first call.
@@ -194,11 +198,27 @@ Returns a login token."
       
       tgt)))
 
-(defun logon-service (principal password &key mode)
+(defun logon-service (principal password-or-keylist &key mode)
+  "Login the current user as a service principal. This function returns a login token to be bound to the *current-user*.
+If there is no current user it will set *current-user* to the return value of this function. This function differs from
+LOGON-USER because it does not contact the KDC, so no TGT is granted to the service. This means login tokens generated
+using this function CANNOT be used to talk to other principals. Only use it when you know your service will be passively 
+authenticating clients.
+
+PRINCIPAL ::= a string of form <principal>@<realm>.
+
+PASSWORD-OR-KEYLIST ::= if a string, will be used as the password of the principal and passed to generate-keylist. If a
+list then is interpreted to be a keylist, as returned from generate-keylist or load-keytab.
+
+MODE ::= usage mode. If :interactive then always sets the *current-user*. If :network then never modifies *current-user*. 
+
+Returns a login token."
   (multiple-value-bind (p realm) (string-principal principal)
     (let ((token (make-login-token :user p
 				   :realm realm
-				   :keylist (generate-keylist principal password))))
+				   :keylist (etypecase password-or-keylist
+                              (string (generate-keylist principal password-or-keylist))
+                              (list password-or-keylist)))))
       (cond
 	((eq mode :interactive) 
 	 (setf *current-user* token))
