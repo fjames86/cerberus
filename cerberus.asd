@@ -6,7 +6,7 @@
   :author "Frank James <frank.a.james@gmail.com>"
   :description "A Kerberos implementation"
   :license "MIT"
-  :version "1.0.1"
+  :version "1.0.2"
   :components
   ((:file "package")
    (:file "asn1" :depends-on ("package"))
