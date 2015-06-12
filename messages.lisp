@@ -96,7 +96,7 @@ Returns (values principal realm).
 	((or (= i len) (char= (char string i) #\@))
 	 (push (subseq string pos i) names)
 	 (setf pos i))
-      (when (member (char string i) '(#\/ #\. #\:) :test #'char=)
+      (when (member (char string i) '(#\/ #\:) :test #'char=)
 	(push (subseq string pos i) names)
 	(setf pos (1+ i))))
     (when (< pos len)
