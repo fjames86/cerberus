@@ -4,9 +4,9 @@
 (asdf:defsystem :cerberus
   :name "cerberus"
   :author "Frank James <frank.a.james@gmail.com>"
-  :description "A Kerberos implementation"
+  :description "Kerberos implementation, provides support to the glass API."
   :license "MIT"
-  :version "1.0.2"
+  :version "1.0.3"
   :components
   ((:file "package")
    (:file "asn1" :depends-on ("package"))
