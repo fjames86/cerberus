@@ -267,7 +267,7 @@ Returns a KDC-REP structure."
 	(error "Cross-realm requests are not yet supported"))
       (setf server p)))
   
-  (let ((cred (find-credentials (login-token-user tgt) (login-token-realm tgt))))
+  (let ((cred (find-credentials server (login-token-realm tgt))))
     (when cred (return-from request-credentials cred)))
 
   (let ((token tgt))
@@ -461,7 +461,7 @@ Returns the modifed AP-REQ structure, with enc-parts replaced with decrypted ver
 	  ;; fixup the ap-req and return that
 	  (setf (ap-req-ticket ap-req) ticket
 		(ap-req-authenticator ap-req) a)
-	  
+
 	  ap-req)))))
 
 (defun ap-req-session-key (req)

@@ -43,13 +43,13 @@
      (make-instance 'kerberos-server-credential 
 		    :keylist (login-token-keylist *current-user*)))
     (principal 
-     (multiple-value-bind (principal realm) (string-principal principal)
+     (multiple-value-bind (p realm) (string-principal principal)
        ;; try to get a tgt we already have
        (let ((tgt *current-user*))		      
 	 ;; check the realms match because we don't support cross-realm requests yet
 	 (unless (or (null realm) (string= realm (login-token-realm tgt)))
 	   (error "Cross-realm requests not currently supported"))
-	 (let ((creds (request-credentials tgt principal)))
+	 (let ((creds (request-credentials tgt p)))
 	   (make-instance 'kerberos-client-credential
 			  :tgt tgt
 			  :creds creds)))))))

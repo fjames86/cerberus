@@ -213,7 +213,7 @@
   ((stream)
    (decode-identifier stream)
    (let ((n (decode-length stream))
-	 (v (nibbles:make-octet-vector 4)))
+         (v (nibbles:make-octet-vector 4)))
      (dotimes (i n)
        (setf (aref v (+ (- 4 n) i)) (read-byte stream)))
      ;; check the sign bit, if it's set then this is a -ve number
@@ -221,7 +221,7 @@
      (when (logtest (aref v (- 4 n)) #x80)
        ;; -ve number
        (dotimes (i (- 4 n))
-	 (setf (aref v i) #xff)))
+         (setf (aref v i) #xff)))
      (nibbles:sb32ref/be v 0)))
   ((stream int)
    (encode-identifier stream 2)
@@ -229,14 +229,14 @@
      (setf (nibbles:sb32ref/be v 0) int)
      ;; we need to use the minimal number of octets
      (let ((len
-	    (cond
-	      ((and (>= int (- (expt 2 7))) (< int (expt 2 7)))
-	       1)
-	      ((and (>= int (- (expt 2 15))) (< int (expt 2 15)))
-	       2)
-	      ((and (>= int (- (expt 2 23))) (< int (expt 2 23)))
-	       3)
-	      (t 4))))
+            (cond
+              ((and (>= int (- (expt 2 7))) (< int (expt 2 7)))
+               1)
+              ((and (>= int (- (expt 2 15))) (< int (expt 2 15)))
+               2)
+              ((and (>= int (- (expt 2 23))) (< int (expt 2 23)))
+               3)
+              (t 4))))
        (encode-length stream len)
        (write-sequence v stream :start (- 4 len))))))
 
@@ -476,7 +476,8 @@
   (every #'= oid1 oid2))
 
 (defun kerberos-oid-p (oid)
-  (oid-eql oid *kerberos-oid*))
+  (or (oid-eql oid *kerberos-oid*)
+      (oid-eql oid *ms-kerberos-oid*)))
 
 ;; ----------------------------
 
@@ -1364,29 +1365,36 @@
 (defun decode-initial-context-token (stream)
   (decode-identifier stream) ;; tag=0, class=application
   (let* ((len (decode-length stream))
-	 (bytes (nibbles:make-octet-vector len)))
+         (bytes (nibbles:make-octet-vector len)))
     (read-sequence bytes stream)
     (flexi-streams:with-input-from-sequence (s bytes)
       ;; contents
       (let ((oid (decode-oid s))) ;; FIXME: dispatch depending on the OID. It is possible to be wrapped in multiple OIDs 
-	(unless (kerberos-oid-p oid)
-	  (error "Token OID ~S not Kerberos" oid)))
-      (let ((id (nibbles:make-octet-vector 2)))
-	(read-sequence id s)
-	(if (= (aref id 1) 0)
-	    (ecase (aref id 0)
-	      (01 (decode-ap-req s))
-	      (02 (decode-ap-rep s))
-	      (03 (decode-krb-error s)))
-	    ;; we are given the length rest of stream contains the token, i.e. read until the end of the stream
-	    ;; don't forget to put the TOK_ID back at the start 
-	    (concatenate '(vector (unsigned-byte 8))
-			 id 
-			 (flexi-streams:with-output-to-sequence (out)
-			   (do ((i (file-position s) (1+ i))
-				(b (read-byte s nil nil) (read-byte s nil nil)))
-			       ((or (null b) (= i len)))
-			     (write-byte b out)))))))))
+        (unless (kerberos-oid-p oid)
+          (error 'glass:gss-error :major :bad-mech)) ;;"Token OID ~S not Kerberos" oid))
+;;        (unless (kerberos-oid-p oid)
+;;          (warn "Token OID ~S not Kerberos" oid))
+        (if (kerberos-oid-p oid)
+            (let ((id (nibbles:make-octet-vector 2)))
+              (read-sequence id s)
+              (if (= (aref id 1) 0)
+                  (ecase (aref id 0)
+                    (01 (decode-ap-req s))
+                    (02 (decode-ap-rep s))
+                    (03 (decode-krb-error s)))
+                  ;; we are given the length rest of stream contains the token, i.e. read until the end of the stream
+                  ;; don't forget to put the TOK_ID back at the start 
+                  (concatenate '(vector (unsigned-byte 8))
+                               id 
+                               (flexi-streams:with-output-to-sequence (out)
+                                 (do ((i (file-position s) (1+ i))
+                                      (b (read-byte s nil nil) (read-byte s nil nil)))
+                                     ((or (null b) (= i len)))
+                                   (write-byte b out))))))
+            ;; this never happens
+            (let ((v (nibbles:make-octet-vector (- len (file-position s)))))              
+              (read-sequence v s)
+              (values v oid)))))))
   
 
 
