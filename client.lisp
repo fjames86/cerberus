@@ -91,7 +91,7 @@
 
 (defun find-tgt (principal realm)
   (find-if (lambda (tgt)
-	     (and (string= (login-token-realm tgt) realm)
+	     (and (string-equal (login-token-realm tgt) realm)
 		  (every #'string= 
 			 (principal-name-name (login-token-user tgt))
 			 (principal-name-name principal))))
@@ -103,7 +103,7 @@ structure which should be used for requests for further tickets.
 
 USERNAME ::= username of principal to login.
 PASSWORD ::= the password to use.
-REALM ::= the realm we are loggin in to.
+REALM ::= the realm we are logging in to.
 
 KDC-ADDRESS ::= the IP address of the KDC.
 TILL-TIME ::= how long the ticket should be valid for, defaults to 6 weeks from present time.
@@ -263,12 +263,12 @@ Returns a KDC-REP structure."
   ;; if a string then convert to a principal
   (when (stringp server)
     (multiple-value-bind (p r) (string-principal server)
-      (unless (string= r (login-token-realm tgt)) 
+      (unless (string-equal r (login-token-realm tgt)) 
 	(error "Cross-realm requests are not yet supported"))
       (setf server p)))
   
-  (let ((cred (find-credentials server (login-token-realm tgt))))
-    (when cred (return-from request-credentials cred)))
+;;  (let ((cred (find-credentials server (login-token-realm tgt))))
+;;    (when cred (return-from request-credentials cred)))
 
   (let ((token tgt))
     (let* ((as-rep (login-token-rep token))
@@ -301,7 +301,7 @@ Returns a KDC-REP structure."
 	  (setf (kdc-rep-enc-part rep) enc))
 	
 	;; store in the credential cache
-	(push rep *credential-cache*)
+;;	(push rep *credential-cache*)
 
 	rep))))
 

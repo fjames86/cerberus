@@ -132,7 +132,7 @@ Note: there currently is no way to use the contents of a keytab file.
 - [ ] Need to be able to renew tickets (written the function but does it work?)
 - [x] Somehow need to be able to use this in an application that requires GSS support.
 - [x] Need to support encrypting application messages using the (sub)session key.
-- [x] Some sort of credential cache, i.e. database of TGTs and tickets for other principals.
+- [ ] Some sort of credential cache, i.e. database of TGTs and tickets for other principals.
 - [ ] Support cross-realm requests and tickets.
 - [ ] Need to support sub-session keys. At the moment it is assumed only the session key is available.
 - [ ] A persistent credential cache? Could use the serializer to write the tickets out to a file.
@@ -144,6 +144,7 @@ in the context of Kerberos messages, but are not generally applicable. Perhaps i
 * This was developed and tested against the Windows KDC (i.e. active directory). It should work with other KDCs such as MIT and Heimdal, 
 but I've not tried.
 * Need to understand the MS-PAC structures, these contain authorization data that is likely to be very useful. 
+* Need to think more clearly about how to properly handle credential caching. What's there at the moment is broken, I have disabled it for the moment. Really it should be persisted anyway (write them out to a file?). 
 
 ## 8. License
 Licensed under the terms of the MIT license.
