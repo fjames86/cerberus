@@ -19,6 +19,22 @@
 		  :etext etext
 		  :edata edata))
 
+(defun select-etype (client-etypes server-etypes)
+  (car (intersection client-etypes server-etypes)))
+
+(defun select-key (client-keys supported-key-types)
+  (find (select-etype (mapcar #'encryption-key-type client-keys)
+		      supported-key-types)
+	client-keys
+	:key #'encryption-key-type))
+
+(defun generate-session-key (etype)
+  (make-encryption-key 
+   :type etype
+   :value (random-to-key etype 
+			 (usb8 (loop :for i :below (profile-key-seed-length etype) ;; this doesn't work
+				  :collect (random 256))))))
+
 ;; this is to request a ticket for the TGS, i.e. krbtgt principal
 (defun generate-as-rep (req)
   "Receive and authenticate an AS-REQ. Returns either an AS-REP or a KRB-ERROR."
@@ -30,8 +46,8 @@
 	  (realm (kdc-req-body-realm body)))
       (unless srv (error 'krb-error-t :err (generate-error :s-principal-unknown realm)))
       (unless clt (error 'krb-error-t :err (generate-error :c-principal-unknown realm)))
-      (unless (string= (car (principal-name-name (kdc-req-body-sname body))) "krbtgt")
-	(error 'krb-error-t :err (generate-error :badoption realm)))
+;;      (unless (string= (car (principal-name-name (kdc-req-body-sname body))) "krbtgt")
+;;	(error 'krb-error-t :err (generate-error :badoption realm)))
       ;; one of the preauth MUST be a :PA-TIMESTAMP
       (let ((a (find-if (lambda (pa)
 			  (eq (pa-data-type pa) :pa-timestamp))
@@ -40,29 +56,37 @@
 	;; validate the timestamp by decrypting it and checking against current time 
 	;; FIXME: validate the timestamp 
 
-	;; if we got here then all is good, generate the kdc-rep 
-	;; the ticket is encryted with the TGS's key 
-	;; the enc-part is encrypted with the client's key 
-	(make-kdc-rep :type :as 
-		      :crealm (kdc-req-body-realm body)
-		      :cname (kdc-req-body-cname body)
-		      :ticket (make-ticket :realm realm
-					   :sname (krbtgt-principal realm)
-					   :enc-part (encrypt-data (make-enc-ticket-part)))
-		      :enc-part (encrypt-data (make-enc-kdc-rep-part)))))))
+	;; if we got here then all is good, generate the kdc-rep.
+	;; The ticket is encryted with the TGS's key,
+	;; The enc-part is encrypted with the client's key.
+	(let ((ticket-key (select-key (getf srv :keys) (mapcar #'encryption-key-type (getf srv :keys))))
+	      (rep-key (select-key (getf clt :keys) (kdc-req-body-etype body))))
+	  (make-kdc-rep :type :as 
+			:crealm (kdc-req-body-realm body)
+			:cname (kdc-req-body-cname body)
+			:ticket (make-ticket :realm realm
+					     :sname (krbtgt-principal realm)
+					     :enc-part (encrypt-data (encryption-key-type ticket-key)
+								     (pack #'encode-enc-ticket-part (make-enc-ticket-part) )
+								     (encryption-key-value ticket-key)
+								     :usage :ticket))
+		      :enc-part (encrypt-data (encryption-key-type rep-key)
+					      (pack #'encode-enc-kdc-rep-part (make-enc-kdc-rep-part))
+					      (encryption-key-value rep-key)
+					      :usage :as-rep)))))))
 
-;; this is to request a ticket for any principal
-(defun generate-tgs-rep (req)
-  "Receive and authenticate a TGT-REQ. Returns either a TGS-REP or a KRB-ERROR."
-  (let ((preauth (kdc-req-data req))
-	(body (kdc-req-req-body req)))
-    ;; try and find the principal
-    (let ((srv (find-spn (principal-string (kdc-req-body-sname body) (kdc-req-body-realm body))))
-	  (clt (find-spn (principal-string (kdc-req-body-cname body) (kdc-req-body-realm body)))))
-      (unless srv (error 'krb-error-t :err (make-krb-error)))
-      (unless clt (error 'krb-error-t :err (make-krb-error)))
-      ;; one of the preauth MUST be a :TGS-REQ
-      nil)))
+;; ;; this is to request a ticket for any principal
+;; (defun generate-tgs-rep (req)
+;;   "Receive and authenticate a TGT-REQ. Returns either a TGS-REP or a KRB-ERROR."
+;;   (let ((preauth (kdc-req-data req))
+;; 	(body (kdc-req-req-body req)))
+;;     ;; try and find the principal
+;;     (let ((srv (find-spn (principal-string (kdc-req-body-sname body) (kdc-req-body-realm body))))
+;; 	  (clt (find-spn (principal-string (kdc-req-body-cname body) (kdc-req-body-realm body)))))
+;;       (unless srv (error 'krb-error-t :err (make-krb-error)))
+;;       (unless clt (error 'krb-error-t :err (make-krb-error)))
+;;       ;; one of the preauth MUST be a :TGS-REQ
+;;       nil)))
 
 (defun process-request (buffer count)
   (flexi-streams:with-output-to-sequence (out)
