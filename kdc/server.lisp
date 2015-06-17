@@ -4,6 +4,21 @@
 
 (in-package #:cerberus)
 
+(defun generate-error (error-code realm &key ctime cusec cname etext edata)
+  (make-krb-error :pvno 5
+		  :type 30
+		  :ctime ctime
+		  :cusec cusec
+		  :stime (get-universal-time)
+		  :susec 0
+		  :error-code error-code
+		  :cname cname
+		  :crealm realm
+		  :realm realm
+		  :sname (krbtgt-principal realm)
+		  :etext etext
+		  :edata edata))
+
 ;; this is to request a ticket for the TGS, i.e. krbtgt principal
 (defun generate-as-rep (req)
   "Receive and authenticate an AS-REQ. Returns either an AS-REP or a KRB-ERROR."
@@ -11,16 +26,17 @@
 	(body (kdc-req-req-body req)))
     ;; try and find the principal
     (let ((srv (find-spn (principal-string (kdc-req-body-sname body) (kdc-req-body-realm body))))
-	  (clt (find-spn (principal-string (kdc-req-body-cname body) (kdc-req-body-realm body)))))
-      (unless srv (error 'krb-error-t :err (make-krb-error)))
-      (unless clt (error 'krb-error-t :err (make-krb-error)))
+	  (clt (find-spn (principal-string (kdc-req-body-cname body) (kdc-req-body-realm body))))
+	  (realm (kdc-req-body-realm body)))
+      (unless srv (error 'krb-error-t :err (generate-error :s-principal-unknown realm)))
+      (unless clt (error 'krb-error-t :err (generate-error :c-principal-unknown realm)))
       (unless (string= (car (principal-name-name (kdc-req-body-sname body))) "krbtgt")
-	(error 'krb-error-t :err (make-krb-error)))
+	(error 'krb-error-t :err (generate-error :badoption realm)))
       ;; one of the preauth MUST be a :PA-TIMESTAMP
       (let ((a (find-if (lambda (pa)
 			  (eq (pa-data-type pa) :pa-timestamp))
 			preauth)))
-	(unless a (error 'krb-error-t :err (make-krb-error)))
+	(unless a (error 'krb-error-t :err (generate-error :preauth-failed realm)))
 	;; validate the timestamp by decrypting it and checking against current time 
 	;; FIXME: validate the timestamp 
 
@@ -30,7 +46,9 @@
 	(make-kdc-rep :type :as 
 		      :crealm (kdc-req-body-realm body)
 		      :cname (kdc-req-body-cname body)
-		      :ticket (make-ticket :enc-part (encrypt-data (make-enc-ticket-part)))
+		      :ticket (make-ticket :realm realm
+					   :sname (krbtgt-principal realm)
+					   :enc-part (encrypt-data (make-enc-ticket-part)))
 		      :enc-part (encrypt-data (make-enc-kdc-rep-part)))))))
 
 ;; this is to request a ticket for any principal
@@ -62,7 +80,7 @@
 		 (krb-error-err e))
 	       (error (e) 
 		 (kdc-log :error "Failed to process: ~A" e)
-		 (make-krb-error)))))
+		 (generate-error :generic *default-realm*)))))
 	(etypecase res
 	  (kdc-rep (encode-kdc-rep out res))
 	  (krb-error (encode-krb-error out res)))))))
