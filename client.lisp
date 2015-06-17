@@ -473,6 +473,7 @@ Returns the modifed AP-REQ structure, with enc-parts replaced with decrypted ver
 
 (defun generate-keylist (principal password)
   "Generate keys for all the registered profiles."
+  (declare (type string principal password))
   (multiple-value-bind (p realm) (string-principal principal)
     (let ((salt (with-output-to-string (s)
 		  (when realm

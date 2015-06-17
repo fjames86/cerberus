@@ -191,7 +191,7 @@
 
 (defun encode-boolean (stream value)
   (encode-identifier stream 0)
-  (encode-length stream 4)
+  (encode-length stream 1)
   (write-byte (if value #xff 0) stream))
 
 ;; FIXME: validate the identifier and length values
