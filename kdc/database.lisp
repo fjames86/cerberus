@@ -13,7 +13,7 @@
    (cerberus::encode-sequence-of stream 'cerberus::encryption-key list)))
 
 (cerberus::defsequence db-entry ()
-  (name cerberus::asn1-string)
+  (name cerberus::asn1-generalized-string)
   (keys db-key-list))
 
 (defvar *db* nil)
@@ -22,14 +22,14 @@
 (defconstant +default-count+ 64)
 (defconstant +default-block-size+ 512)
 
-(defun open-kdc-db (&key count)
+(defun open-kdc-db ()
   (unless *db*
     (setf *db*
 	  (pounds.db:open-db *db-path* #'decode-db-entry #'encode-db-entry
-			     :count (or count +default-count+)
+			     :count +default-count+
 			     :block-size +default-block-size+))))
 
-(defun close-kdb-db ()
+(defun close-kdc-db ()
   (when *db*
     (pounds.db:close-db *db*)
     (setf *db* nil)))
@@ -49,9 +49,10 @@
   (let ((entry (pounds.db:find-entry name *db*
 				     :test #'string-equal
 				     :key #'db-entry-name)))
-    (list :name (db-entry-name entry)
-	  :keys (db-entry-keys entry))))
-
+    (when entry 
+      (list :name (db-entry-name entry)
+	    :keys (db-entry-keys entry)))))
+  
 (defun remove-spn (name)
   (declare (type string name))
   (open-kdc-db)
