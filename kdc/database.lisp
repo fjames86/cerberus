@@ -55,10 +55,10 @@
 (defun remove-spn (name)
   (declare (type string name))
   (open-kdc-db)
-  (setf (pounds.db:find-entry name *db*
-			      :test #'string-equal
-			      :key #'db-entry-name)
-	nil))
+  (pounds.db:remove-entry name *db*
+			  :test #'string-equal
+			  :key #'db-entry-name)
+  nil)
 
 (defun list-spn ()
   (open-kdc-db)
