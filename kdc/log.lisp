@@ -2,7 +2,7 @@
 ;;;; This code is licensed under the MIT license.
 
 
-(in-package #:cerberus)
+(in-package #:cerberus-kdc)
 
 (defvar *kdc-log* nil)
 (defvar *log-path* (merge-pathnames "kdc.log" (user-homedir-pathname)))

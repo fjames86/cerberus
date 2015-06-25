@@ -2,22 +2,22 @@
 ;;;; This code is licensed under the MIT license.
 
 
-(in-package #:cerberus)
+(in-package #:cerberus-kdc)
 
 (defun generate-error (error-code realm &key ctime cusec cname etext edata)
-  (make-krb-error :pvno 5
-		  :type 30
-		  :ctime ctime
-		  :cusec cusec
-		  :stime (get-universal-time)
-		  :susec 0
-		  :error-code error-code
-		  :cname cname
-		  :crealm realm
-		  :realm realm
-		  :sname (krbtgt-principal realm)
-		  :etext etext
-		  :edata edata))
+  (cerberus::make-krb-error :pvno 5
+                            :type 30
+                            :ctime ctime
+                            :cusec cusec
+                            :stime (get-universal-time)
+                            :susec 0
+                            :error-code error-code
+                            :cname cname
+                            :crealm realm
+                            :realm realm
+                            :sname (cerberus::krbtgt-principal realm)
+                            :etext etext
+                            :edata edata))
 
 (defun select-etype (client-etypes server-etypes)
   (car (intersection client-etypes server-etypes)))
@@ -32,7 +32,7 @@
   (make-encryption-key 
    :type etype
    :value (random-to-key etype 
-			 (usb8 (loop :for i :below (profile-key-seed-length etype) ;; this doesn't work
+			 (usb8 (loop :for i :below (profile-key-seed-length etype) ;; this doesn't work because some types return 1 here instead of their realm seed length 
 				  :collect (random 256))))))
 
 ;; this is to request a ticket for the TGS, i.e. krbtgt principal
