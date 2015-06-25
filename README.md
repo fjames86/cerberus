@@ -136,6 +136,13 @@ Note: there currently is no way to use the contents of a keytab file.
 - [ ] Support cross-realm requests and tickets.
 - [ ] Need to support sub-session keys. At the moment it is assumed only the session key is available.
 - [ ] A persistent credential cache? Could use the serializer to write the tickets out to a file.
+- [ ] Support forwarding/forwarded TGTs. This is required to fully enable Single-Sign-On semantics, 
+since it allows the application server to request tickets as if it were the client, effecitively forwarding the 
+client's identity to the application server.
+- [ ] It is impossible to know for sure what the correct salt to use is when requesting a TGT because it may not
+be the default. We should therefore detect a KRB-ERROR-T (PREAUTH-FAILED) and inspect the data, this should
+include an ETYPE-INFO or ETYPE-INFO2 structure which contains the real salt. Maybe we can just provide a suitable
+restart?
 
 ## 7. Notes
 * Both the DER serializer and the encryption functions cons A LOT.
