@@ -108,3 +108,9 @@ Returns (values principal realm).
 					 (t :principal)))
 	    realm)))
 
+(defun default-salt (principal realm)
+  (declare (type principal-name principal)
+           (type string realm))
+  (format nil "~A~{~A~}" 
+          (string-upcase realm)
+          (principal-name-name principal)))

@@ -97,7 +97,7 @@
 			 (principal-name-name principal))))
 	   *tgt-cache*))
 
-(defun request-tgt (principal password realm &key kdc-address till-time (etype :des-cbc-md5))
+(defun request-tgt (principal password realm &key kdc-address till-time (etype :des-cbc-md5) salt)
   "Login to the authentication server to reqest a ticket for the Ticket-granting server. Returns a LOGIN-TOKEN
 structure which should be used for requests for further tickets.
 
@@ -122,11 +122,10 @@ ETYPE ::= encryption profile name to use for pre-authentication.
     ((and (not realm) (not *default-realm*))
      (error "Must specify a realm if not set default.")))
      
-  (let* ((salt (format nil "~A~A" 
-		       (string-upcase realm) 
-		       (with-output-to-string (s)
-			 (dolist (name (principal-name-name principal))
-			   (princ name s)))))
+  ;; FIXME: the salt can be different from the default. The KDC will tell us what salt ot use by erroring
+  ;; and returning an ETYPE-INFO/ETYPE-INFO2 structure in the krb-error. If that happens we should 
+  ;; retry using that salt value.
+  (let* ((salt (or salt (default-salt principal realm)))
 	 (key (string-to-key etype
                             password
 			    salt)))
@@ -142,6 +141,8 @@ ETYPE ::= encryption profile name to use for pre-authentication.
                        :till-time (or till-time (time-from-now :weeks 6)))))
       ;; we need to decrypt the enc-part of the response to verify it
       ;; FIXME: need to know, e.g. the nonce that we used in the request
+      ;; FIXME: there is no guarnatee that the salt for this encryption type will be the same 
+      ;; as for the original request. 
       (let ((enc (unpack #'decode-enc-as-rep-part 
                          (decrypt-data (kdc-rep-enc-part as-rep) 
 				       (let ((e (kdc-rep-enc-part as-rep)))
@@ -475,11 +476,7 @@ Returns the modifed AP-REQ structure, with enc-parts replaced with decrypted ver
   "Generate keys for all the registered profiles."
   (declare (type string principal password))
   (multiple-value-bind (p realm) (string-principal principal)
-    (let ((salt (with-output-to-string (s)
-		  (when realm
-		    (princ (string-upcase realm) s))
-		  (dolist (name (principal-name-name p))
-		    (princ name s)))))
+    (let ((salt (default-salt p (or realm *default-realm*))))
       (mapcar (lambda (type)
 		(make-encryption-key :type type
 				     :value (string-to-key type password salt)))
