@@ -103,7 +103,7 @@ Returns (values principal realm).
       (setf realm (subseq string (1+ pos))))
     (values (make-principal-name :name (reverse names)
 				 :type (cond
-					 ((and names (string-equal (first names) "host")) :srv-host)
+					 ((and names (string-equal (car (last names)) "host")) :srv-host)
 					 ((cdr names) :srv-inst)
 					 (t :principal)))
 	    realm)))
