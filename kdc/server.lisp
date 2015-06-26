@@ -176,9 +176,11 @@
 	     (handler-case 
 		 (let ((req (decode-kdc-req in)))
 		   (ecase (kdc-req-type req)
-		     (10 ;; TGS-REQ
+		     (10 ;; TGS-REQ		      
+		      (kdc-log :info "TGS-REQ")
 		      (generate-tgs-response req))
 		     (12 ;; AS-REQ 
+		      (kdc-log :info "AS-REQ")
 		      (generate-as-response req))))
 	       (krb-error-t (e)
 		 (kdc-log :error "KRB error: ~A" e)

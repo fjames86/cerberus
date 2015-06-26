@@ -22,4 +22,19 @@
   :depends-on (:alexandria :nibbles :flexi-streams :babel 
 	       :ironclad :usocket :glass))
 
+(asdf:defsystem :cerberus-kdc
+  :name "cerberus-kdc"
+  :author "Frank James <frank.a.james@gmail.com>"
+  :description "Kerberos KDC support."
+  :license "MIT"
+  :components
+  ((:module :kdc
+	    :pathname "kdc"
+	    :components 
+	    ((:file "log")
+	     (:file "database")
+	     (:file "server" :depends-on ("log" "database"))
+	     (:file "kdc" :depends-on ("server")))))
+  :depends-on (:cerberus :pounds))
+
 
