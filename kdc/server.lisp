@@ -159,10 +159,22 @@
     (unless patgs 
       (error 'krb-error-t :err (generate-error :preauth-failed realm)))
 
-    (generate-ticket (kdc-req-body-cname body)
-		     (kdc-req-body-sname body)
-		     realm
-		     (mapcar #'encryption-key-type (find-spn-keys (principal-string (kdc-req-body-cname body) realm))))))
+    (let* ((keys (find-spn-keys (principal-string 
+				 (kdc-req-body-cname body) realm)))
+	   (ticket (generate-ticket (kdc-req-body-cname body)
+				    (kdc-req-body-sname body)
+				    realm
+				    (mapcar #'encryption-key-type keys))))
+      (make-kdc-rep :type :tgs
+		    :crealm realm
+		    :cname (kdc-req-body-cname body)
+		    :ticket ticket 
+		    :enc-part 
+		    (encrypt-data (encryption-key-type (car keys))
+				  (pack #'encode-enc-tgs-rep-part 
+					(make-enc-kdc-rep-part))
+				  (encryption-key-value (car keys))
+				  :usage :tgs-rep)))))
     
 
 
@@ -170,27 +182,31 @@
 
 
 (defun process-request (buffer count)
-  (flexi-streams:with-output-to-sequence (out)
-    (flexi-streams:with-input-from-sequence (in buffer :end count)
-      (let ((res 
-	     (handler-case 
-		 (let ((req (decode-kdc-req in)))
-		   (ecase (kdc-req-type req)
-		     (10 ;; TGS-REQ		      
-		      (kdc-log :info "TGS-REQ")
-		      (generate-tgs-response req))
-		     (12 ;; AS-REQ 
-		      (kdc-log :info "AS-REQ")
-		      (generate-as-response req))))
-	       (krb-error-t (e)
-		 (kdc-log :error "KRB error: ~A" e)
-		 (krb-error-err e))
-	       (error (e) 
-		 (kdc-log :error "Failed to process: ~A" e)
-		 (generate-error :generic *default-realm*)))))
-	(etypecase res
-	  (kdc-rep (encode-kdc-rep out res))
-	  (krb-error (encode-krb-error out res)))))))
+  (kdc-log :info "~X" (subseq buffer 0 count))
+  (let ((id (unpack #'decode-identifier buffer)))
+    (flexi-streams:with-output-to-sequence (out)
+      (flexi-streams:with-input-from-sequence (in buffer :end count)
+	(let ((res 
+	       (handler-case
+		   (let ((req (ecase id 
+				(10 (decode-as-req in))
+				(12 (decode-tgs-req in)))))
+		     (ecase (kdc-req-type req)
+		       (:tgs ;; TGS-REQ		      
+			(kdc-log :info "TGS-REQ")
+			(generate-tgs-response req))
+		       (:as ;; AS-REQ 
+			(kdc-log :info "AS-REQ")
+			(generate-as-response req))))
+		 (krb-error-t (e)
+		   (kdc-log :error "KRB error: ~A" e)
+		   (krb-error-err e))
+		 (error (e) 
+		   (kdc-log :error "Failed to process: ~A" e)
+		   (generate-error :generic *default-realm*)))))
+	  (etypecase res
+	    (kdc-rep (encode-kdc-rep out res))
+	    (krb-error (encode-krb-error out res))))))))
 
 
 
@@ -213,7 +229,7 @@
 	    (cond
 	      ((< (cadr conn) now)
 	       ;; expired, close it
-	       (usocket:socket-close (car conn))
+	       (ignore-errors (usocket:socket-close (car conn)))
 	       nil)
 	      (t
 	       ;; still active, keep it
@@ -221,7 +237,7 @@
 	  conns))
 
 (defun run-kdc-server (server)
-  (let ((tcp (usocket:socket-listen nil +kdc-port+
+  (let ((tcp (usocket:socket-listen usocket:*wildcard-host* +kdc-port+
 				    :reuse-address t
 				    :element-type '(unsigned-byte 8)))
 	(udp (usocket:socket-connect nil 0
@@ -236,7 +252,8 @@
 	   ;; iterate over the conns and clear them out if expired
 	   (setf conns (purge-connections conns now))
 	   ;; wait for input from the sockets/connections
-	   (let ((socks (usocket:wait-for-input (append (list tcp udp) conns)
+	   (let ((socks (usocket:wait-for-input (append (list tcp udp) 
+							(mapcar #'car conns))
 						:timeout 1
 						:ready-only t)))
 	     (dolist (sock socks)
@@ -259,35 +276,41 @@
 					   :port remote-port))))
 		 (usocket:stream-usocket
 		  ;; read from tcp
-		  (let ((len (nibbles:read-ub32/be (usocket:socket-stream sock))))
-		    (read-sequence udp-buffer (usocket:socket-stream sock) :end len)
-		    (let ((resp-buffer (process-request udp-buffer len)))
-		      (nibbles:write-ub32/be (length resp-buffer) (usocket:socket-stream sock))
-		      (write-sequence resp-buffer (usocket:socket-stream sock))
-		      (force-output (usocket:socket-stream sock)))))))))
+		  (kdc-log :info "Reading TCP req")
+		  (handler-case 
+		      (let ((len (nibbles:read-ub32/be (usocket:socket-stream sock))))
+			(read-sequence udp-buffer (usocket:socket-stream sock) :end len)
+			(let ((resp-buffer (process-request udp-buffer len)))
+			  (nibbles:write-ub32/be (length resp-buffer) (usocket:socket-stream sock))
+			  (write-sequence resp-buffer (usocket:socket-stream sock))
+			  (force-output (usocket:socket-stream sock))))
+		    (error (e)
+		      (kdc-log :info "Error processing ~A" e)
+		      (ignore-errors (usocket:socket-close sock))
+		      (setf conns (remove sock conns :key #'car :test #'eql)))))))))
       (dolist (conn conns)
-	(usocket:socket-close (car conn)))
+	(ignore-errors (usocket:socket-close (car conn))))
       (usocket:socket-close tcp)
       (usocket:socket-close udp))))
   
 
-(defvar *server* nil)
+(defvar *kdc-server* nil)
 
 (defun start-kdc-server (&key (realm *default-realm*) timeout)
-  (when *server* (error "KDC already running"))
-  (setf *server* (make-kdc-server :timeout (or timeout 60))
-	*krbtgt-keylist* (or (find-spn-keys (format nil "krbtgt/~A@~A" realm realm))
-			     (error "No SPN for krbtgt")))
-  (setf (kdc-server-thread *server*)
+  (when *kdc-server* (error "KDC already running"))
+  (setf *krbtgt-keylist* (or (find-spn-keys (format nil "krbtgt/~A@~A" realm realm))
+			     (error "No SPN for krbtgt"))
+	*kdc-server* (make-kdc-server :timeout (or timeout 60)))
+  (setf (kdc-server-thread *kdc-server*)
 	(bt:make-thread (lambda ()
-			  (run-kdc-server *server*))
+			  (run-kdc-server *kdc-server*))
 			:name "kdc-server-thread"))
-  *server*)
+  *kdc-server*)
 	
 (defun stop-kdc-server ()
-  (unless *server* (error "No KDC server running"))
-  (setf (kdc-server-exiting *server*) t)
-  (bt:join-thread (kdc-server-thread *server*))
-  (setf *server* nil))
+  (unless *kdc-server* (error "No KDC server running"))
+  (setf (kdc-server-exiting *kdc-server*) t)
+  (bt:join-thread (kdc-server-thread *kdc-server*))
+  (setf *kdc-server* nil))
 
 
