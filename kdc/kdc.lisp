@@ -5,7 +5,12 @@
 (defpackage #:cerberus-kdc
   (:use #:cl)
   (:export #:start-kdc-server
-	   #:stop-kdc-server))
+	   #:stop-kdc-server
+	   
+	   #:add-spn
+	   #:remove-spn
+	   #:find-spn
+	   #:list-spn))
 
 
 (in-package #:cerberus-kdc)
@@ -20,5 +25,17 @@
   (cerberus::stop-kdc-server)
   (cerberus::kdc-log :info "KDC Stopped"))
 
+
+(defun find-spn (name)
+  (cerberus::find-spn name))
+
+(defun add-spn (name)
+  (cerberus::add-spn name password))
+
+(defun remove-spn (name)
+  (cerberus::remove-spn name))
+
+(defun list-spn ()
+  (cerberus::list-spn))
 
 
