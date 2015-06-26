@@ -101,7 +101,7 @@
 		     (error 'krb-error-t :err (generate-error :c-principal-unknown realm)))))
       ;; preauthenticate 
       (let ((patimestamp (find-if (lambda (pa)
-				    (eq (pa-data-type pa) :pa-timestamp))
+				    (eq (pa-data-type pa) :enc-timestamp))
 				  preauth)))
 	(unless patimestamp 
 	  (error 'krb-error-t :err (generate-error :padata-type-nosupp realm)))
@@ -125,7 +125,7 @@
 			  :cname (kdc-req-body-cname body)
 			  :ticket ticket 
 			  :enc-part (encrypt-data (encryption-key-type ckey)
-						  (pack #'encode-enc-kdc-rep-part 
+						  (pack #'encode-enc-as-rep-part 
 							(make-enc-kdc-rep-part :key (generate-session-key (encryption-key-type ckey))
 									       :nonce (kdc-req-body-nonce body)
 									       :flags flags
@@ -205,7 +205,9 @@
 		   (kdc-log :error "Failed to process: ~A" e)
 		   (generate-error :generic *default-realm*)))))
 	  (etypecase res
-	    (kdc-rep (encode-kdc-rep out res))
+	    (kdc-rep (ecase id 
+		       (10 (encode-as-rep out res))
+		       (12 (encode-tgs-rep out res))))
 	    (krb-error (encode-krb-error out res))))))))
 
 
