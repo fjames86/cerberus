@@ -2,18 +2,18 @@
 ;;;; This code is licensed under the MIT license.
 
 
-(in-package #:cerberus-kdc)
+(in-package #:cerberus)
 
 ;; this defines the database to store the principals and their keys
 
-(cerberus::defxtype db-key-list ()
+(defxtype db-key-list ()
   ((stream)
-   (cerberus::decode-sequence-of stream 'cerberus::encryption-key))
+   (decode-sequence-of stream 'encryption-key))
   ((stream list)
-   (cerberus::encode-sequence-of stream 'cerberus::encryption-key list)))
+   (encode-sequence-of stream 'encryption-key list)))
 
-(cerberus::defsequence db-entry ()
-  (name cerberus::asn1-generalized-string)
+(defsequence db-entry ()
+  (name asn1-generalized-string)
   (keys db-key-list))
 
 (defvar *db* nil)
@@ -52,7 +52,12 @@
     (when entry 
       (list :name (db-entry-name entry)
 	    :keys (db-entry-keys entry)))))
-  
+
+(defun find-spn-keys (name)
+  (let ((entry (find-spn name)))
+    (when entry 
+      (getf entry :keys))))
+
 (defun remove-spn (name)
   (declare (type string name))
   (open-kdc-db)

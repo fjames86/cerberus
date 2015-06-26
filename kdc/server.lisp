@@ -2,22 +2,34 @@
 ;;;; This code is licensed under the MIT license.
 
 
-(in-package #:cerberus-kdc)
+(in-package #:cerberus)
+
+
+;; We have two jobs to do here:
+;; 1. Provide the initial authentication, i.e. run as the Authentication Server (AS). 
+;; We validate requests by checking the encrypted timestamp (pa-timestamp). Almost
+;; always we will be providing tickets for the TGS i.e. ticket-granting tickets.
+;; But it is permissable to provide tickets for any principal.
+;;
+;; 2. Generate tickets for any principal. We must be provided with a TGT, i.e. a ticket
+;; for ourselves. We then generate a ticket for the requested principal.
+;;
+
 
 (defun generate-error (error-code realm &key ctime cusec cname etext edata)
-  (cerberus::make-krb-error :pvno 5
-                            :type 30
-                            :ctime ctime
-                            :cusec cusec
-                            :stime (get-universal-time)
-                            :susec 0
-                            :error-code error-code
-                            :cname cname
-                            :crealm realm
-                            :realm realm
-                            :sname (cerberus::krbtgt-principal realm)
-                            :etext etext
-                            :edata edata))
+  (make-krb-error :pvno 5
+		  :type 30
+		  :ctime ctime
+		  :cusec cusec
+		  :stime (get-universal-time)
+		  :susec 0
+		  :error-code error-code
+		  :cname cname
+		  :crealm realm
+		  :realm realm
+		  :sname (krbtgt-principal realm)
+		  :etext etext
+		  :edata edata))
 
 (defun select-etype (client-etypes server-etypes)
   (car (intersection client-etypes server-etypes)))
@@ -32,61 +44,130 @@
   (make-encryption-key 
    :type etype
    :value (random-to-key etype 
-			 (usb8 (loop :for i :below (profile-key-seed-length etype) ;; this doesn't work because some types return 1 here instead of their realm seed length 
+			 ;; this doesn't work because some types return 1 here instead of their realm seed length 
+			 (usb8 (loop :for i :below (profile-key-seed-length etype) 
 				  :collect (random 256))))))
 
-;; this is to request a ticket for the TGS, i.e. krbtgt principal
-(defun generate-as-rep (req)
-  "Receive and authenticate an AS-REQ. Returns either an AS-REP or a KRB-ERROR."
-  (let ((preauth (kdc-req-data req))
-	(body (kdc-req-req-body req)))
-    ;; try and find the principal
-    (let ((srv (find-spn (principal-string (kdc-req-body-sname body) (kdc-req-body-realm body))))
-	  (clt (find-spn (principal-string (kdc-req-body-cname body) (kdc-req-body-realm body))))
-	  (realm (kdc-req-body-realm body)))
-      (unless srv (error 'krb-error-t :err (generate-error :s-principal-unknown realm)))
-      (unless clt (error 'krb-error-t :err (generate-error :c-principal-unknown realm)))
-;;      (unless (string= (car (principal-name-name (kdc-req-body-sname body))) "krbtgt")
-;;	(error 'krb-error-t :err (generate-error :badoption realm)))
-      ;; one of the preauth MUST be a :PA-TIMESTAMP
-      (let ((a (find-if (lambda (pa)
-			  (eq (pa-data-type pa) :pa-timestamp))
-			preauth)))
-	(unless a (error 'krb-error-t :err (generate-error :preauth-failed realm)))
-	;; validate the timestamp by decrypting it and checking against current time 
-	;; FIXME: validate the timestamp 
+(defun generate-ticket (client server realm etypes &key start-time end-time flags)
+  (declare (type principal-name client server)
+	   (type string realm))
+  (let ((sentry (find-spn (principal-string client realm))))
+    (unless sentry 
+      (error 'krb-error-t :err (generate-error :s-principal-unknown realm)))
+    (let ((key (select-key (getf sentry :keys) etypes)))
+      (make-ticket :realm realm
+		   :sname server
+		   :enc-part 
+		   (encrypt-data (encryption-key-type key)
+				 (pack #'encode-enc-ticket-part 
+				       (make-enc-ticket-part :flags flags
+							     :key (generate-session-key (encryption-key-type key))
+							     :crealm realm
+							     :cname client
+							     :transited (make-transited-encoding :type 1)
+							     :authtime (get-universal-time)
+							     :starttime start-time
+							     :endtime (or end-time (time-from-now :weeks 6))))	
+				 (encryption-key-value key)
+				 :usage :ticket)))))
 
-	;; if we got here then all is good, generate the kdc-rep.
-	;; The ticket is encryted with the TGS's key,
-	;; The enc-part is encrypted with the client's key.
-	(let ((ticket-key (select-key (getf srv :keys) (mapcar #'encryption-key-type (getf srv :keys))))
-	      (rep-key (select-key (getf clt :keys) (kdc-req-body-etype body))))
-	  (make-kdc-rep :type :as 
-			:crealm (kdc-req-body-realm body)
-			:cname (kdc-req-body-cname body)
-			:ticket (make-ticket :realm realm
-					     :sname (krbtgt-principal realm)
-					     :enc-part (encrypt-data (encryption-key-type ticket-key)
-								     (pack #'encode-enc-ticket-part (make-enc-ticket-part) )
-								     (encryption-key-value ticket-key)
-								     :usage :ticket))
-		      :enc-part (encrypt-data (encryption-key-type rep-key)
-					      (pack #'encode-enc-kdc-rep-part (make-enc-kdc-rep-part))
-					      (encryption-key-value rep-key)
-					      :usage :as-rep)))))))
+;; allow a 5 minute maximum clock skew 
+(defconstant +maximum-skew+ (* 5 60)) 
 
-;; ;; this is to request a ticket for any principal
-;; (defun generate-tgs-rep (req)
-;;   "Receive and authenticate a TGT-REQ. Returns either a TGS-REP or a KRB-ERROR."
-;;   (let ((preauth (kdc-req-data req))
-;; 	(body (kdc-req-req-body req)))
-;;     ;; try and find the principal
-;;     (let ((srv (find-spn (principal-string (kdc-req-body-sname body) (kdc-req-body-realm body))))
-;; 	  (clt (find-spn (principal-string (kdc-req-body-cname body) (kdc-req-body-realm body)))))
-;;       (unless srv (error 'krb-error-t :err (make-krb-error)))
-;;       (unless clt (error 'krb-error-t :err (make-krb-error)))
-;;       ;; one of the preauth MUST be a :TGS-REQ
-;;       nil)))
+(defun authenticate-pa-timestamp (data key-list realm)
+  ;; first find the key matching the encryption type of the auth data
+  (let ((key (find-if (lambda (k)
+			(eq (encryption-key-type k) (encrypted-data-type data)))
+		      key-list)))
+    (unless key 
+      (error 'krb-error-t :err (generate-error :preauth-failed realm)))
+    (let ((timestamp (unpack #'decode-pa-enc-ts-enc 
+			     (decrypt-data data (encryption-key-value key)
+					   :usage :pa-enc-timestamp))))
+      (unless (< (abs (- (pa-enc-ts-enc-patimestamp timestamp) (get-universal-time)))
+		 +maximum-skew+)
+	(error 'krb-error-t :err (generate-error :preauth-failed realm)))))
+  t)
+
+
+(defun generate-as-response (req)
+  (declare (type kdc-req req))
+  (let* ((preauth (kdc-req-data req))
+	 (body (kdc-req-req-body req))
+	 (realm (kdc-req-body-realm body)))
+	 
+    ;; start by finding the keys for the client and server 
+    (let ((ckeys (or (find-spn-keys (principal-string (kdc-req-body-cname body) realm))
+		     (error 'krb-error-t :err (generate-error :c-principal-unknown realm)))))
+      ;; preauthenticate 
+      (let ((patimestamp (find-if (lambda (pa)
+				    (eq (pa-data-type pa) :pa-timestamp))
+				  preauth)))
+	(unless patimestamp 
+	  (error 'krb-error-t :err (generate-error :padata-type-nosupp realm)))
+	(authenticate-pa-timestamp (pa-data-value patimestamp) ckeys realm)
+
+	;; preauthentication has succeeded, grant the ticket 
+	(let* ((end-time (time-from-now :weeks 6))
+	       (flags nil)
+	       (ticket 
+		(generate-ticket (kdc-req-body-cname body)
+				 (kdc-req-body-sname body)
+				 realm
+				 (mapcar #'encryption-key-type ckeys)
+				 :end-time end-time
+				 :flags flags)))
+	  (let ((ckey (select-key ckeys (kdc-req-body-etype body))))
+	    (unless ckey 
+	      (error 'krb-error-t :err (generate-error :etype-nosupp realm)))
+	    (make-kdc-rep :type :as
+			  :crealm realm
+			  :cname (kdc-req-body-cname body)
+			  :ticket ticket 
+			  :enc-part (encrypt-data (encryption-key-type ckey)
+						  (pack #'encode-enc-kdc-rep-part 
+							(make-enc-kdc-rep-part :key (generate-session-key (encryption-key-type ckey))
+									       :nonce (kdc-req-body-nonce body)
+									       :flags flags
+									       :authtime (get-universal-time)
+									       :endtime end-time
+									       :srealm realm
+									       :sname (kdc-req-body-sname body)))
+						  (encryption-key-value ckey)
+						  :usage :as-rep))))))))
+
+
+;; ----------------------------------------------------
+
+;; this should be bound to the keylist for the krbtgt/REALM principal.
+(defvar *krbtgt-keylist* nil)
+
+(defun authenticate-pa-tgs (data)
+  (let ((ap-req (unpack #'decode-ap-req data)))
+    ;; check the ticket 
+    (valid-ticket-p *krbtgt-keylist* ap-req)))
+
+
+;; this should authenticate and then generate a ticket for the principal 
+(defun generate-tgs-response (req)
+  (declare (type kdc-req req))
+  (let* ((patgs (find-if (lambda (pa)
+			   (eq (pa-data-type pa) :tgs-req))
+			 (kdc-req-data req)))
+	 (body (kdc-req-req-body req))
+	 (realm (kdc-req-body-realm body)))
+    (unless patgs 
+      (error 'krb-error-t :err (generate-error :preauth-failed realm)))
+
+    (generate-ticket (kdc-req-body-cname body)
+		     (kdc-req-body-sname body)
+		     realm
+		     (mapcar #'encryption-key-type (find-spn-keys (principal-string (kdc-req-body-cname body) realm))))))
+    
+
+
+;; -----------------------------------------------------
+
 
 (defun process-request (buffer count)
   (flexi-streams:with-output-to-sequence (out)
@@ -96,9 +177,9 @@
 		 (let ((req (decode-kdc-req in)))
 		   (ecase (kdc-req-type req)
 		     (10 ;; TGS-REQ
-		      (generate-tgs-rep req))
+		      (generate-tgs-response req))
 		     (12 ;; AS-REQ 
-		      (generate-as-rep req))))
+		      (generate-as-response req))))
 	       (krb-error-t (e)
 		 (kdc-log :error "KRB error: ~A" e)
 		 (krb-error-err e))
@@ -190,9 +271,10 @@
 
 (defvar *server* nil)
 
-(defun start-kdc-server (&key timeout)
+(defun start-kdc-server (&key (realm *default-realm*) timeout)
   (when *server* (error "KDC already running"))
-  (setf *server* (make-kdc-server :timeout (or timeout 60)))
+  (setf *server* (make-kdc-server :timeout (or timeout 60))
+	*krbtgt-keylist* (find-spn-keys (format nil "krbtgt/~A@~A" realm realm)))
   (setf (kdc-server-thread *server*)
 	(bt:make-thread (lambda ()
 			  (run-kdc-server *server*))
