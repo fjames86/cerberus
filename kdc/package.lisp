@@ -71,5 +71,13 @@
 	   #:add-spn
 	   #:remove-spn
 	   #:find-spn
-	   #:list-spn))
+	   #:list-spn
+
+	   #:call-null
+	   #:call-add
+	   #:call-remove
+	   #:call-find
+	   #:call-list))
+
+
 

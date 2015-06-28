@@ -55,21 +55,23 @@
     (unless sentry 
       (error 'krb-error-t :err (generate-error :s-principal-unknown realm)))
     (let ((key (select-key (getf sentry :keys) etypes)))
-      (make-ticket :realm realm
-		   :sname server
-		   :enc-part 
-		   (encrypt-data (encryption-key-type key)
-				 (pack #'encode-enc-ticket-part 
-				       (make-enc-ticket-part :flags flags
-							     :key (generate-session-key (encryption-key-type key))
-							     :crealm realm
-							     :cname client
-							     :transited (make-transited-encoding :type 1)
-							     :authtime (get-universal-time)
-							     :starttime start-time
-							     :endtime (or end-time (time-from-now :weeks 6))))	
-				 (encryption-key-value key)
-				 :usage :ticket)))))
+      (values 
+       (make-ticket :realm realm
+		    :sname server
+		    :enc-part 
+		    (encrypt-data (encryption-key-type key)
+				  (pack #'encode-enc-ticket-part 
+					(make-enc-ticket-part :flags flags
+							      :key (generate-session-key (encryption-key-type key))
+							      :crealm realm
+							      :cname client
+							      :transited (make-transited-encoding :type 1)
+							      :authtime (get-universal-time)
+							      :starttime start-time
+							      :endtime (or end-time (time-from-now :weeks 6))))	
+				  (encryption-key-value key)
+				  :usage :ticket))
+       key))))
 
 ;; allow a 5 minute maximum clock skew 
 (defconstant +maximum-skew+ (* 5 60)) 
@@ -161,20 +163,29 @@
 
     (let* ((keys (find-spn-keys (principal-string 
 				 (kdc-req-body-cname body) realm)))
-	   (ticket (generate-ticket (kdc-req-body-cname body)
-				    (kdc-req-body-sname body)
-				    realm
-				    (mapcar #'encryption-key-type keys))))
-      (make-kdc-rep :type :tgs
-		    :crealm realm
-		    :cname (kdc-req-body-cname body)
-		    :ticket ticket 
-		    :enc-part 
-		    (encrypt-data (encryption-key-type (car keys))
-				  (pack #'encode-enc-tgs-rep-part 
-					(make-enc-kdc-rep-part))
-				  (encryption-key-value (car keys))
-				  :usage :tgs-rep)))))
+;;	   (key (cerberus::enc-kdc-rep-part-key ??)) ;; FIXME: use this key 
+	   (end-time (time-from-now :weeks 6)))
+      (multiple-value-bind (ticket key)
+	  (generate-ticket (kdc-req-body-cname body)
+			   (kdc-req-body-sname body)
+			   realm
+			   (mapcar #'encryption-key-type keys)
+			   :end-time end-time)
+	(make-kdc-rep :type :tgs
+		      :crealm realm
+		      :cname (kdc-req-body-cname body)
+		      :ticket ticket 
+		      :enc-part 
+		      (encrypt-data (encryption-key-type key)
+				    (pack #'encode-enc-tgs-rep-part 
+					  (make-enc-kdc-rep-part :key (generate-session-key (encryption-key-type key))
+								 :nonce (kdc-req-body-nonce body)
+								 :authtime (get-universal-time)
+								 :endtime end-time
+								 :srealm realm
+								 :sname (kdc-req-body-sname body))) 
+				    (encryption-key-value key)
+				    :usage :tgs-rep))))))
     
 
 
@@ -194,7 +205,7 @@
 		     (ecase (kdc-req-type req)
 		       (:tgs ;; TGS-REQ		      
 			(kdc-log :info "TGS-REQ")
-			(generate-tgs-response req))
+			(handler-bind ((error (lambda (e) (break) (error e)))) (generate-tgs-response req)))
 		       (:as ;; AS-REQ 
 			(kdc-log :info "AS-REQ")
 			(generate-as-response req))))
@@ -208,7 +219,7 @@
 	    (kdc-rep (ecase id 
 		       (10 (encode-as-rep out res))
 		       (12 (encode-tgs-rep out res))))
-	    (krb-error-t (encode-krb-error out res))))))))
+	    (krb-error (encode-krb-error out res))))))))
 
 
 
@@ -297,8 +308,9 @@
   
 
 (defvar *kdc-server* nil)
+(defvar *rpc-server* nil)
 
-(defun start-kdc-server (&key (realm *default-realm*) timeout)
+(defun start-kdc-server (realm &key timeout (rpc-server t))
   (when *kdc-server* (error "KDC already running"))
   (setf *krbtgt-keylist* (or (find-spn-keys (format nil "krbtgt/~A@~A" realm realm))
 			     (error "No SPN for krbtgt"))
@@ -307,12 +319,25 @@
 	(bt:make-thread (lambda ()
 			  (run-kdc-server *kdc-server*))
 			:name "kdc-server-thread"))
-  *kdc-server*)
+
+  (when rpc-server 
+    (setf *rpc-server* (frpc:make-rpc-server)) ;; :programs '(kdc-prog)))
+    (frpc:start-rpc-server *rpc-server*))
+  
+  nil)
 	
 (defun stop-kdc-server ()
   (unless *kdc-server* (error "No KDC server running"))
   (setf (kdc-server-exiting *kdc-server*) t)
   (bt:join-thread (kdc-server-thread *kdc-server*))
-  (setf *kdc-server* nil))
+  (setf *kdc-server* nil)
+
+  (when *rpc-server* 
+    (frpc:stop-rpc-server *rpc-server*)
+    (setf *rpc-server* nil))
+  
+  nil)
+
+
 
 
