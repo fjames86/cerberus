@@ -2,7 +2,7 @@
 ;;;; This code is licensed under the MIT license.
 
 
-(in-package #:cerberus)
+(in-package #:cerberus-kdc)
 
 
 ;; We have two jobs to do here:
@@ -208,7 +208,7 @@
 	    (kdc-rep (ecase id 
 		       (10 (encode-as-rep out res))
 		       (12 (encode-tgs-rep out res))))
-	    (krb-error (encode-krb-error out res))))))))
+	    (krb-error-t (encode-krb-error out res))))))))
 
 
 

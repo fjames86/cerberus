@@ -2,7 +2,7 @@
 ;;;; This code is licensed under the MIT license.
 
 
-(in-package #:cerberus)
+(in-package #:cerberus-kdc)
 
 ;; this defines the database to store the principals and their keys
 
@@ -73,5 +73,8 @@
 				:keys (db-entry-keys entry)))
 			*db*))
 
+(defun spn-name (spn)
+  (getf spn :name))
 
-
+(defun spn-keys (spn)
+  (getf spn :keys))

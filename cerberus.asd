@@ -31,10 +31,10 @@
   ((:module :kdc
 	    :pathname "kdc"
 	    :components 
-	    ((:file "log")
-	     (:file "database")
-	     (:file "server" :depends-on ("log" "database"))
-	     (:file "kdc" :depends-on ("server")))))
+	    ((:file "package")
+	     (:file "log" :depends-on ("package"))
+	     (:file "database" :depends-on ("package"))
+	     (:file "server" :depends-on ("log" "database")))))
   :depends-on (:cerberus :pounds))
 
 
