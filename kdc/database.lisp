@@ -34,14 +34,17 @@
     (pounds.db:close-db *db*)
     (setf *db* nil)))
 
-(defun add-spn (name password)
-  (declare (type string name password))
+(defun add-spn* (name keys)
   (open-kdc-db)
   (setf (pounds.db:find-entry name *db*
 			      :test #'string-equal
 			      :key #'db-entry-name)
 	(make-db-entry :name name
-		       :keys (generate-keylist name password))))
+		       :keys keys)))
+
+(defun add-spn (name password)
+  (declare (type string name password))
+  (add-spn* name (generate-keylist name password)))
 
 (defun find-spn (name)
   (declare (type string name))

@@ -34,7 +34,8 @@
 	    ((:file "package")
 	     (:file "log" :depends-on ("package"))
 	     (:file "database" :depends-on ("package"))
-	     (:file "server" :depends-on ("log" "database")))))
-  :depends-on (:cerberus :pounds))
+	     (:file "server" :depends-on ("log" "database"))
+	     (:file "kdc" :depends-on ("server")))))
+  :depends-on (:cerberus :pounds :frpc))
 
 
