@@ -87,15 +87,15 @@
 (defvar *default-realm* nil
   "The name of the default realm.")
 
-(defvar *tgt-cache* nil)
-
-(defun find-tgt (principal realm)
-  (find-if (lambda (tgt)
-	     (and (string-equal (login-token-realm tgt) realm)
-		  (every #'string= 
-			 (principal-name-name (login-token-user tgt))
-			 (principal-name-name principal))))
-	   *tgt-cache*))
+;; This was intended to be used as some sort of credential cache but it doesn't really work.
+;; (defvar *tgt-cache* nil)
+;; (defun find-tgt (principal realm)
+;;   (find-if (lambda (tgt)
+;; 	     (and (string-equal (login-token-realm tgt) realm)
+;; 		  (every #'string= 
+;; 			 (principal-name-name (login-token-user tgt))
+;; 			 (principal-name-name principal))))
+;; 	   *tgt-cache*))
 
 (defun request-tgt (principal password realm &key kdc-address till-time (etype :des-cbc-md5) salt)
   "Login to the authentication server to reqest a ticket for the Ticket-granting server. Returns a LOGIN-TOKEN
@@ -160,7 +160,7 @@ ETYPE ::= encryption profile name to use for pre-authentication.
 				   :tgs (kdc-rep-ticket as-rep)
 				   :user principal
 				   :realm realm)))
-	(push tgt *tgt-cache*)
+;;	(push tgt *tgt-cache*)
 	tgt))))
 
 ;; ---------------------------------------------------
