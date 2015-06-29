@@ -162,7 +162,7 @@ CL-USER> (defparameter *client* (make-instance 'frpc:gss-client :credentials (gs
 CL-USER> (cerberus-kdc:call-find "frank@FRANK" :client *client*)
 ```
 
-## 6. TODO
+## 7. TODO
 - [ ] Need to be able to renew tickets (written the function but does it work?)
 - [x] Somehow need to be able to use this in an application that requires GSS support.
 - [x] Need to support encrypting application messages using the (sub)session key.
@@ -178,7 +178,7 @@ be the default. We should therefore detect a KRB-ERROR-T (PREAUTH-FAILED) and in
 include an ETYPE-INFO or ETYPE-INFO2 structure which contains the real salt. Maybe we can just provide a suitable
 restart?
 
-## 7. Notes
+## 8. Notes
 * Both the DER serializer and the encryption functions cons A LOT.
 * The ASN.1 serializer is specific to this project and NOT a generalized ASN.1 (DER) serializer. It makes certain assumptions which are valid
 in the context of Kerberos messages, but are not generally applicable. Perhaps it could form the basis of one in the future.
@@ -187,7 +187,7 @@ but I've not tried. It is also internally consistent, so it works with the cerbe
 * Need to understand the MS-PAC structures, these contain authorization data that is likely to be very useful. 
 * Need to think more clearly about how to properly handle credential caching. What's there at the moment is broken, I have disabled it for the moment. Really it should be persisted anyway (write them out to a file?). 
 
-## 8. License
+## 9. License
 Licensed under the terms of the MIT license.
 
 Frank James 
