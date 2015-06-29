@@ -44,7 +44,8 @@
 
 (defun add-spn (name password)
   (declare (type string name password))
-  (add-spn* name (generate-keylist name password)))
+  (add-spn* name (generate-keylist name password))
+  nil)
 
 (defun find-spn (name)
   (declare (type string name))

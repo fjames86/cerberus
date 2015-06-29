@@ -34,7 +34,7 @@ Microsoft.
 - [x] Validate AP-REQ messages to authenticate clients
 - [x] Wrap AP-REQ messages with the KRB5 OID, as required for GSS
 - [x] Some sort of GSSAPI integration (sort of there, some polishing required)
-- [ ] Long term aim: write a KDC server
+- [x] Write a KDC server
 
 ## 3. Usage
 
@@ -128,6 +128,40 @@ encryption key.
 
 Note: there currently is no way to use the contents of a keytab file.
 
+## 6. KDC
+Cerberus now supports a simple KDC server. Each SPN (service principal name) is stored as an entry in a pounds 
+database. The krbtgt principal is mandatory because this is the principal under which the TGS runs. So you must
+first run
+```
+CL-USER> (cerberus-kdc:add-spn "krbtgt/MYREALM@MYREALM" "password")
+```
+before it can be used. Of course, you will also want to add other principals for each user and service. 
+
+### 6.1 Example 
+
+Add some SPNs and start the server:
+```
+CL-USER> (cerberus-kdc:add-spn "krbtgt/FRANK@FRANK" "mykdcpassword")
+CL-USER> (cerberus-kdc:add-spn "frank@FRANK" "1234")
+CL-USER> (cerberus-kdc:add-spn "dave@FRANK" "4321")
+CL-USER> (cerberus-kdc:start-kdc-server "FRANK")
+```
+
+On the client, logon and get a ticket:
+```
+CL-USER> (cerberus:logon-user "frank@FRANK" "1234" :kdc-address "10.1.1.1")
+CL-USER> (gss:acquire-credentials :kerberos "dave@FRANK")
+```
+
+### 6.2 RPC interface
+The Cerberus KDC supports an RPC interface for configuration over the network. It is defined in kdc.x 
+and implemented in kdc.lisp. Clients MUST be authenticated using AUTH-GSS:
+
+```
+CL-USER> (defparameter *client* (make-instance 'frpc:gss-client :credentials (gss:acquire-credentials :kerberos "krbtgt/FRANK@FRANK") :program 901980025 :version 1 :host "10.1.1.1"))
+CL-USER> (cerberus-kdc:call-find "frank@FRANK" :client *client*)
+```
+
 ## 6. TODO
 - [ ] Need to be able to renew tickets (written the function but does it work?)
 - [x] Somehow need to be able to use this in an application that requires GSS support.
@@ -149,7 +183,7 @@ restart?
 * The ASN.1 serializer is specific to this project and NOT a generalized ASN.1 (DER) serializer. It makes certain assumptions which are valid
 in the context of Kerberos messages, but are not generally applicable. Perhaps it could form the basis of one in the future.
 * This was developed and tested against the Windows KDC (i.e. active directory). It should work with other KDCs such as MIT and Heimdal, 
-but I've not tried.
+but I've not tried. It is also internally consistent, so it works with the cerberus KDC as well.
 * Need to understand the MS-PAC structures, these contain authorization data that is likely to be very useful. 
 * Need to think more clearly about how to properly handle credential caching. What's there at the moment is broken, I have disabled it for the moment. Really it should be persisted anyway (write them out to a file?). 
 
