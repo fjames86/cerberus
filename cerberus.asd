@@ -6,7 +6,7 @@
   :author "Frank James <frank.a.james@gmail.com>"
   :description "Kerberos implementation, provides support to the glass API."
   :license "MIT"
-  :version "1.0.3"
+  :version "1.1.0"
   :components
   ((:file "package")
    (:file "asn1" :depends-on ("package"))
@@ -25,17 +25,17 @@
 (asdf:defsystem :cerberus-kdc
   :name "cerberus-kdc"
   :author "Frank James <frank.a.james@gmail.com>"
-  :description "Kerberos KDC support."
+  :description "Kerberos KDC server for cerberus."
   :license "MIT"
   :components
   ((:module :kdc
-	    :pathname "kdc"
-	    :components 
-	    ((:file "package")
-	     (:file "log" :depends-on ("package"))
-	     (:file "database" :depends-on ("package"))
-	     (:file "server" :depends-on ("log" "database"))
-	     (:file "kdc" :depends-on ("server")))))
+            :pathname "kdc"
+            :components 
+            ((:file "package")
+             (:file "log" :depends-on ("package"))
+             (:file "database" :depends-on ("package"))
+             (:file "server" :depends-on ("log" "database"))
+             (:file "kdc" :depends-on ("server")))))
   :depends-on (:cerberus :pounds :frpc))
 
 
