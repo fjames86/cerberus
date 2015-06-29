@@ -61,7 +61,22 @@
 		#:encode-as-rep
 		#:encode-tgs-rep
 		#:encode-krb-error
-		#:krb-error)
+		#:krb-error
+        #:ap-req-session-key
+        #:ap-req-ticket
+        #:ap-req-authenticator
+        #:ticket-enc-part
+        #:decode-authenticator
+        #:enc-ticket-part-crealm
+        #:authenticator-crealm
+        #:principal-name-name
+        #:enc-ticket-part-cname
+        #:authenticator-cname
+        #:authenticator-ctime
+        #:enc-ticket-part-endtime
+        #:+acceptable-skew+
+        #:enc-ticket-part-key
+        #:decode-enc-ticket-part)
   (:export #:start-kdc-server
 	   #:stop-kdc-server
 	   

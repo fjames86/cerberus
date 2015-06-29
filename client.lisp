@@ -130,8 +130,8 @@ ETYPE ::= encryption profile name to use for pre-authentication.
                             password
 			    salt)))
 
-    (let ((tgt (find-tgt principal realm)))
-      (when tgt (return-from request-tgt tgt)))
+;;    (let ((tgt (find-tgt principal realm)))
+;;      (when tgt (return-from request-tgt tgt)))
 
     (let ((as-rep 
            (as-req-tcp kdc-address
@@ -424,46 +424,46 @@ Returns the modifed AP-REQ structure, with enc-parts replaced with decrypted ver
     (setf ap-req (unpack #'decode-ap-req ap-req)))
 
   (let ((ticket (ap-req-ticket ap-req))
-	(enc-auth (ap-req-authenticator ap-req)))
+        (enc-auth (ap-req-authenticator ap-req)))
     ;; start by decrypting the ticket to get the session key 
     (let ((enc (decrypt-ticket-enc-part keylist ticket)))
       (setf (ticket-enc-part ticket) enc)
       
       (let ((key (enc-ticket-part-key enc)))
-	;; now decrypt the authenticator using the session key we got from the ticket
-	(let ((a (unpack #'decode-authenticator 
-			 (decrypt-data enc-auth (encryption-key-value key)
-				       :usage :ap-req))))
+        ;; now decrypt the authenticator using the session key we got from the ticket
+        (let ((a (unpack #'decode-authenticator 
+                         (decrypt-data enc-auth (encryption-key-value key)
+                                       :usage :ap-req))))
 
-	  ;; check the contents of the authenticator against the ticket....
-	  ;; check the crealm and cname match
-	  (unless (string= (enc-ticket-part-crealm enc) (authenticator-crealm a))
-	    (error 'kerberos-error 
-		   :stat :badmatch
-		   :desc "Client realm mismatch"))
+          ;; check the contents of the authenticator against the ticket....
+          ;; check the crealm and cname match
+          (unless (string= (enc-ticket-part-crealm enc) (authenticator-crealm a))
+            (error 'kerberos-error 
+                   :stat :badmatch
+                   :desc "Client realm mismatch"))
 
-	  ;; check the ctime and cusec match
-	  (unless (every #'string= 
-			 (principal-name-name (enc-ticket-part-cname enc))
-			 (principal-name-name (authenticator-cname a)))
-	    (error 'kerberos-error 
-		   :stat :badmatch
-		   :desc "Principal name mismatch"))
+          ;; check the ctime and cusec match
+          (unless (every #'string= 
+                         (principal-name-name (enc-ticket-part-cname enc))
+                         (principal-name-name (authenticator-cname a)))
+            (error 'kerberos-error 
+                   :stat :badmatch
+                   :desc "Principal name mismatch"))
 
-	  ;; check the client time is within acceptable skew of currnet time
-	  (unless (< (abs (- (get-universal-time) (authenticator-ctime a)))
-		     +acceptable-skew+)
-	    (error 'kerberos-error :stat :skew))
+          ;; check the client time is within acceptable skew of currnet time
+          (unless (< (abs (- (get-universal-time) (authenticator-ctime a)))
+                     +acceptable-skew+)
+            (error 'kerberos-error :stat :skew))
 
-	  ;; check the endtime is less than the current time
-	  (unless (< (get-universal-time) (enc-ticket-part-endtime enc))
-	    (error 'kerberos-error :stat :tkt-expired))
+          ;; check the endtime is less than the current time
+          (unless (< (get-universal-time) (enc-ticket-part-endtime enc))
+            (error 'kerberos-error :stat :tkt-expired))
 
-	  ;; fixup the ap-req and return that
-	  (setf (ap-req-ticket ap-req) ticket
-		(ap-req-authenticator ap-req) a)
+          ;; fixup the ap-req and return that
+          (setf (ap-req-ticket ap-req) ticket
+                (ap-req-authenticator ap-req) a)
 
-	  ap-req)))))
+          ap-req)))))
 
 (defun ap-req-session-key (req)
   "Extract the session key from the AP request, so that clients may use it to wrap/unwrap messages."
