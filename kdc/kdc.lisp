@@ -63,43 +63,29 @@
 (frpc:defrpc call-find 1 kdc-name spn 
   (:arg-transformer (name) name)
   (:program kdc-prog 1)
-  (:handker #'handle-find))
+  (:handler #'handle-find))
 
 ;; ----------------------------------------------------
 
 (defun handle-add (spn)
   (auth-or-fail)
-  (kdc-log :info "~A ADD ~A" (frpc:rpc-auth-principal) (getf spn :name))
+  (kdc-log :info "RPC ~A ADD ~A" (frpc:rpc-auth-principal) (getf spn :name))
   (add-spn* (getf spn :name) (getf spn :keys)))
 
 (frpc:defrpc call-add 2 spn :void 
   (:arg-transformer (spn) spn)
   (:program kdc-prog 1)
-  (:handker #'handle-add))
+  (:handler #'handle-add))
 
 ;; ----------------------------------------------------
 
 (defun handle-remove (name)  
   (auth-or-fail)
-  (kdc-log :info "~A REMOVE ~A" (frpc:rpc-auth-principal) name)
+  (kdc-log :info "RPC ~A REMOVE ~A" (frpc:rpc-auth-principal) name)
   (remove-spn name))
 
 (frpc:defrpc call-remove 3 kdc-name :void 
   (:arg-transformer (name) name)
   (:program kdc-prog 1)
-  (:handle #'handle-remove))
-
-;; ----------------------------------------------------
-
-(defun handle-list (void)
-  (declare (ignore void))
-  (auth-or-fail)
-  (list-spn))
-
-(frpc:defrpc call-list 4 :void spn-key-list 
-  (:program kdc-prog 1)
-  (:handler #'handle-list))
-
-
-
+  (:handler #'handle-remove))
 

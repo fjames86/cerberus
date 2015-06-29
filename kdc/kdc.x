@@ -34,7 +34,6 @@ program KDC_PROG {
     spn KDC_FIND( kdc_name ) = 1;
     void KDC_ADD( spn ) = 2;
     void KDC_REMOVE( kdc_name ) = 3;
-    spn_key_list KDC_LIST( void ) = 4;
   } = 1;
 } = 901980025;
 

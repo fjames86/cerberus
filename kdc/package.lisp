@@ -91,8 +91,7 @@
 	   #:call-null
 	   #:call-add
 	   #:call-remove
-	   #:call-find
-	   #:call-list))
+	   #:call-find))
 
 
 
