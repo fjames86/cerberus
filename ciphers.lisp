@@ -94,13 +94,14 @@
 (defmethod profile-decrypt ((type (eql :des-cbc-md5)) key octets)
   (decrypt-des-cbc key octets))
 
-(defmethod profile-encrypt-data ((type (eql :des-cbc-md5)) octets key &key initialization-vector)
+(defmethod profile-encrypt-data ((type (eql :des-cbc-md5)) octets key &key initialization-vector usage)
   (des-encrypt octets
 	       (lambda (data)
 		 (encrypt-des-cbc key data :initialization-vector initialization-vector))
 	       #'md5))
 
-(defmethod profile-decrypt-data ((type (eql :des-cbc-md5)) octets key &key initialization-vector)
+(defmethod profile-decrypt-data ((type (eql :des-cbc-md5)) octets key &key initialization-vector usage)
+  (declare (ignore usage))
   (des-decrypt octets
 	       (lambda (data)
 		 (decrypt-des-cbc key data :initialization-vector initialization-vector))
