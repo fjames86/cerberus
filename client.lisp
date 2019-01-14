@@ -168,7 +168,7 @@ ETYPE ::= encryption profile name to use for pre-authentication.
 (defvar *current-user* nil
   "The login token of the current user. Set with LOGON-USER (interactive mode) or dynamically rebind")
 
-(defun logon-user (principal password &key mode kdc-address)
+(defun logon-user (principal password &key mode kdc-address etype)
   "Logon the user by requesting a TGT from the KDC. This function MUST be called before any other functionality (e.g. GSS methods exported 
 from the GLASS package) will work.
 
@@ -180,13 +180,16 @@ MODE ::= a symbol naming a logon mode, :INTERACTIVE implies modifying the *CURRE
 If *CURRENT-USER* is nil, :INTERACTIVE is implied, otherwise :NETWORK is implied.
 KDC-ADDRESS ::= IP of the KDC. This MUST be supplied in the first call.
 
+ETYPE ::= encryption mode profile name. Get list of available modes by calling LIST-ALL-PROFILES.
+
 Returns a login token."
   (declare (type string principal))
   (multiple-value-bind (p realm) (string-principal principal)
     (let ((tgt
 	   (request-tgt p password 
 			(or realm *default-realm*)
-			:kdc-address (or kdc-address *kdc-address*))))
+			:kdc-address (or kdc-address *kdc-address*)
+			:etype (or etype :des-cbc-md5))))
       ;; store the keylist for this user as well (comes in handy if we are running as a server!)
       (setf (login-token-keylist tgt)
 	    (generate-keylist principal password))

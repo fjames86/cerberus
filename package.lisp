@@ -37,7 +37,11 @@
 	   
 	   ;; encrypt messages in a KRB-PRIV structure 
 	   #:wrap-message
-	   #:unwrap-message))
+	   #:unwrap-message
+
+	   ;; list available encryption types 
+	   #:list-all-profiles
+	   ))
 
 
 
