@@ -190,7 +190,7 @@
 ;; -------------- booleans ---------------
 
 (defun encode-boolean (stream value)
-  (encode-identifier stream 0)
+  (encode-identifier stream 1)
   (encode-length stream 1)
   (write-byte (if value #xff 0) stream))
 
