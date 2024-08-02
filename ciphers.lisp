@@ -7,7 +7,7 @@
 ;; this amounts to a set of functions which should be dispatched to depending on
 ;; the encrpyion type
 
-;; FIXME: add more profiel functions to get other info, e.g. cipher key size, cipher block size etc
+;; FIXME: add more profile functions to get other info, e.g. cipher key size, cipher block size etc
 
 (defvar *profiles* nil
   "A list of symbols naming available encryption type profiles.")
@@ -394,7 +394,6 @@
 
 ;; I think this works
 (defun des3-random-to-key (octets)
-  (declare (type (vector (unsigned-byte 8) 7) octets))
   (let ((v (nibbles:make-octet-vector 8)))
     (dotimes (i 7)
       (setf (aref v i) (aref octets i) 
